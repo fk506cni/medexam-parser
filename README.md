@@ -96,6 +96,7 @@ graph TD
 * \[ \] **Step 5.5: Summary Output (集計情報出力)**: 各PDFファイルごとの問題数、問題タイプの内訳、画像数などの統計情報を中間ファイルとして出力し、検証を容易にする。  
 * \[ \] **Step 6: Finalization (最終生成)**: 全てのデータを統合し、最終的なJSONと画像ファイルを出力する。
 
+
 ## **実行手順**
 
 #### **1. リポジトリのクローン**
@@ -129,7 +130,7 @@ GOOGLE_API_KEY="your_api_key_here"
     *   **画像PDF:** `..._02.pdf` で終わるファイル (例: `tp240424-01a_02.pdf`)
     *   **正答値表PDF:** `...seitou.pdf` を含むファイル (例: `tp240424-01seitou.pdf`)
 *   **処理の自動スキップ:**
-    *   画像PDF (`_02.pdf`) は、テキスト処理が不要なためStep 2, 3が自動的にスキップされます。
+    *   画像PDF (`_02.pdf`) は、テキスト処理が不要なためStep 2, 3, 4が自動的にスキップされます。
     *   正答値表は、Step 5で正解情報を統合するために使用されます。
 
 #### **4. Dockerコンテナのビルド**
@@ -144,26 +145,30 @@ docker-compose build
 
 `docker-compose run` コマンドを使用して、解析処理を実行します。
 
+
 **主要なコマンドライン引数:**
 
 | 引数 | 説明 | デフォルト値 |
 | :--- | :--- | :--- |
 | `--steps [数値...]` | 実行するステップ番号をスペース区切りで指定します。 | 全ステップ |
 | `--files [ファイル名...]` | 処理対象のPDFファイルをスペース区切りで指定します。 | `input`内の全PDF |
-| `--model-name [モデル名]` | Step 3で使用するLLMモデル名を指定します。 | `gemini-1.5-flash-latest` |
+| `--model-name [モデル名]` | Step 3, 4で使用するLLMモデル名を指定します。 | `gemini-2.5-flash-lite` |
 | `--rate-limit-wait [秒数]`| LLM APIの呼び出し間隔（秒）を指定します。 | `10.0` |
+| `--batch-size [数値]` | Step 4で一度に処理する問題数を指定します。 | `5` |
+| `--max-batches [数値]` | Step 4で処理する最大バッチ数を指定します（デバッグ用）。`0`の場合は全バッチを処理します。 | `0` |
+
 
 **実行例:**
 
 ```bash
-# Step 1, 2, 3 を特定のファイルに対して実行
-docker-compose run --rm parser python src/main.py --steps 1 2 3 --files tp240424-01a_01.pdf
+# 【推奨】まず最初の1バッチだけを処理して、Step4の動作を確認する
+docker-compose run --rm parser python src/main.py --steps 4 --files tp240424-01a_01.pdf --max-batches 1
 
-# モデル名を変更して実行
-docker-compose run --rm parser python src/main.py --steps 3 --model-name gemini-pro
+# 全ステップを特定のファイルに対して実行
+docker-compose run --rm parser python src/main.py --files tp240424-01a_01.pdf
 
-# API待機時間を5秒に変更して実行
-docker-compose run --rm parser python src/main.py --steps 3 --rate-limit-wait 5.0
+# モデル名とバッチサイズを変更してStep4を実行
+docker-compose run --rm parser python src/main.py --steps 4 --model-name gemini-pro --batch-size 3
 
 # 引数を指定せずに全ステップを全ファイルに対して実行
 docker-compose run --rm parser python src/main.py
@@ -173,41 +178,41 @@ docker-compose run --rm parser python src/main.py
 
 ## **生成される産物の例**
 
-#### **JSONデータ (output/json/{exam\_id}.json)**
+#### **JSONデータ (output/json/{exam_id}.json)**
 
 **禁忌肢を含む選択式問題の例:**
 
-{  
-  "id": "118-X-99",  
-  "question\_type": "multiple\_choice",  
-  "text": "（問題文）",  
-  "images": \[\],  
-  "choices": \[  
-    { "id": "1", "text": "選択肢1" },  
-    { "id": "2", "text": "選択肢2" },  
-    { "id": "3", "text": "選択肢3" },  
-    { "id": "4", "text": "選択肢4" }  
-  \],  
-  "answer": {  
-    "choices": \["1", "4"\],  
-    "forbidden\_choices": \["2"\]  
-  }  
+{
+  "id": "118-X-99",
+  "question_type": "multiple_choice",
+  "text": "（問題文）",
+  "images": [],
+  "choices": [
+    { "id": "1", "text": "選択肢1" },
+    { "id": "2", "text": "選択肢2" },
+    { "id": "3", "text": "選択肢3" },
+    { "id": "4", "text": "選択肢4" }
+  ],
+  "answer": {
+    "choices": ["1", "4"],
+    "forbidden_choices": ["2"]
+  }
 }
 
 **Note:** 禁忌肢の情報は、公式に公開されている正答値表には通常含まれていません。この情報を付与するには、別途定義された禁忌肢リストなどを読み込ませる必要があります。
 
 **数字入力問題の例:**
 
-{  
-  "id": "118-D-75",  
-  "question\_type": "numeric\_float",  
-  "text": "生後1時間の男児...1時間あたりの10%ブドウ糖液投与量を求めよ。...",  
-  "images": \[\],  
-  "choices": null,  
-  "answer": {  
-    "value": 9.6,  
-    "unit": "mL/時間"  
-  }  
+{
+  "id": "118-D-75",
+  "question_type": "numeric_float",
+  "text": "生後1時間の男児...1時間あたりの10%ブドウ糖液投与量を求めよ。...",
+  "images": [],
+  "choices": null,
+  "answer": {
+    "value": 9.6,
+    "unit": "mL/時間"
+  }
 }
 
 #### **画像データ (output/images/)**
@@ -216,9 +221,9 @@ docker-compose run --rm parser python src/main.py
 
 ## **今後の課題・展望**
 
-* **対応年度の拡大:** 過去の年度の試験問題PDFにも対応できるよう、パーサーの堅牢性を向上させる。  
-* **Web UIの開発:** PDFをアップロードし、ブラウザ上で結果を確認・編集できるインターフェースを構築する。  
-* **精度評価:** ルールベースとLLMによる解析結果の精度を定量的に評価し、比較する仕組みを導入する。  
+* **対応年度の拡大:** 過去の年度の試験問題PDFにも対応できるよう、パーサーの堅牢性を向上させる。
+* **Web UIの開発:** PDFをアップロードし、ブラウザ上で結果を確認・編集できるインターフェースを構築する。
+* **精度評価:** ルールベースとLLMによる解析結果の精度を定量的に評価し、比較する仕組みを導入する。
 * **パフォーマンス最適化:** 大量のPDFを高速に処理するための並列処理やキャッシュ機構を検討する。
 
 ## **貢献の方法 (Contributing)**

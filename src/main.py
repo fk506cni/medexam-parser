@@ -8,6 +8,7 @@ sys.path.append(str(Path(__file__).parent))
 from steps.step1_extract import extract_raw_data
 from steps.step2_reorder import reorder_text
 from steps.step3_chunk import chunk_text_by_problem
+from steps.step4_structure import structure_problems
 
 # --- パス設定 ---
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -64,6 +65,26 @@ def run_step3(step2_output_path: Path, rate_limit_wait: float, model_name: str):
         print(f"  [Step 3] Failed for {step2_output_path.parent.name}.")
     return result_path
 
+def run_step4(step3_output_path: Path, model_name: str, rate_limit_wait: float, batch_size: int, max_batches: int):
+    """Step 4: 問題を構造化する"""
+    if not step3_output_path or not step3_output_path.exists():
+        print(f"  [Step 4] Skipped: Input file not found: {step3_output_path}")
+        return None
+    print(f"  [Step 4] Running Structure Parsing for {step3_output_path.parent.name}...")
+    result_path = structure_problems(
+        step3_output_path=step3_output_path,
+        intermediate_dir=INTERMEDIATE_DIR,
+        model_name=model_name,
+        rate_limit_wait=rate_limit_wait,
+        batch_size=batch_size,
+        max_batches=max_batches
+    )
+    if result_path:
+        print(f"  [Step 4] Completed. Output: {result_path}")
+    else:
+        print(f"  [Step 4] Failed for {step3_output_path.parent.name}.")
+    return result_path
+
 def main():
     """
     コマンドライン引数に基づいて、指定されたステップとファイルで解析処理を実行する。
@@ -94,6 +115,18 @@ def main():
         default="gemini-2.5-flash-lite",
         help="使用するLLMモデル名を指定します。"
     )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=5,
+        help="Step 4でLLMに一度に送信する問題数を指定します。"
+    )
+    parser.add_argument(
+        "--max-batches",
+        type=int,
+        default=0,
+        help="Step 4で処理する最大のバッチ数を指定します。0の場合は全バッチを処理します。デバッグ用。"
+    )
     args = parser.parse_args()
 
     setup_directories()
@@ -116,6 +149,9 @@ def main():
     print(f"Target Files: {[p.name for p in pdf_files]}")
     print(f"LLM Model: {args.model_name}")
     print(f"LLM API Wait: {args.rate_limit_wait}s")
+    print(f"LLM Batch Size: {args.batch_size}")
+    if args.max_batches > 0:
+        print(f"LLM Max Batches: {args.max_batches}")
     print("-" * 30)
 
     # --- ステップ実行 ---
@@ -156,6 +192,14 @@ def main():
             if not step2_output:
                 step2_output = INTERMEDIATE_DIR / pdf_stem / "step2_reordered_text.txt"
             step_outputs[3] = run_step3(step2_output, args.rate_limit_wait, args.model_name)
+
+        if 4 in executable_steps:
+            step3_output = step_outputs.get(3)
+            if not step3_output:
+                step3_output = INTERMEDIATE_DIR / pdf_stem / "step3_problem_chunks.json"
+            step_outputs[4] = run_step4(
+                step3_output, args.model_name, args.rate_limit_wait, args.batch_size, args.max_batches
+            )
         
         # (ここに後続ステップの呼び出しを追加)
 
