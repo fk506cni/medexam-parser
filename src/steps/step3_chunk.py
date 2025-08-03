@@ -12,7 +12,6 @@ load_dotenv()
 
 # --- LLMとプロンプトのパス設定 ---
 API_KEY = os.getenv("GOOGLE_API_KEY")
-MODEL_NAME = "gemini-1.5-flash-latest"
 PROMPT_FILE = Path(__file__).parent / "step3_prompt.txt"
 
 def _load_prompt_template() -> str:
@@ -39,10 +38,10 @@ def _create_text_chunks(text: str, chunk_size: int, overlap: int) -> List[str]:
         start += chunk_size - overlap
     return chunks
 
-def _call_gemini_api(chunk_text: str) -> Optional[List[Dict]]:
+def _call_gemini_api(chunk_text: str, model_name: str) -> Optional[List[Dict]]:
     """LLMを呼び出し、パースされたJSONを返す"""
     try:
-        model = genai.GenerativeModel(MODEL_NAME)
+        model = genai.GenerativeModel(model_name)
         prompt = PROMPT_TEMPLATE.format(text_content=chunk_text)
         response = model.generate_content(prompt)
         
@@ -68,10 +67,15 @@ def _call_gemini_api(chunk_text: str) -> Optional[List[Dict]]:
         return []
     except Exception as e:
         print(f"An unexpected error occurred in _call_gemini_api: {e}")
-        time.sleep(5)
+        # APIエラー発生時はNoneを返して呼び出し元でリトライなどを判断させる
         return None
 
-def chunk_text_by_problem(step2_output_path: Path, intermediate_dir: Path) -> Optional[Path]:
+def chunk_text_by_problem(
+    step2_output_path: Path, 
+    intermediate_dir: Path, 
+    rate_limit_wait: float, 
+    model_name: str
+) -> Optional[Path]:
     """LLMを使ってテキストを問題ごとにチャンク化し、JSONファイルとして保存する"""
     if not API_KEY:
         print("Error: GOOGLE_API_KEY is not set. Skipping Step 3.")
@@ -89,16 +93,13 @@ def chunk_text_by_problem(step2_output_path: Path, intermediate_dir: Path) -> Op
         print(f"Error: Input file not found at {step2_output_path}")
         return None
 
-    if not text.strip():
-        print(f"Warning: Input file {step2_output_path.name} is empty. Skipping.")
-        chunks = []
-    else:
+    all_problems = {}
+    if text.strip():
         text_chunks = _create_text_chunks(text, chunk_size=15000, overlap=500)
         
-        all_problems = {}
         for i, chunk in enumerate(text_chunks):
             print(f"  - Processing chunk {i+1}/{len(text_chunks)}...")
-            parsed_json = _call_gemini_api(chunk)
+            parsed_json = _call_gemini_api(chunk, model_name)
             
             if parsed_json is None:
                 print(f"  - Chunk {i+1} failed due to API error. Skipping.")
@@ -109,8 +110,12 @@ def chunk_text_by_problem(step2_output_path: Path, intermediate_dir: Path) -> Op
                     all_problems[problem["problem_number"]] = problem
                 else:
                     print(f"Warning: Invalid item in LLM response: {problem}")
+            
+            # 次のAPI呼び出しの前に指定された時間だけ待機
+            if i < len(text_chunks) - 1:
+                time.sleep(rate_limit_wait)
 
-        chunks = sorted(list(all_problems.values()), key=lambda p: p["problem_number"])
+    chunks = sorted(list(all_problems.values()), key=lambda p: p.get("problem_number", 0))
 
     output_path = step_output_dir / "step3_problem_chunks.json"
     with open(output_path, "w", encoding="utf-8") as f:

@@ -98,32 +98,43 @@ graph TD
 
 ## **実行手順**
 
-#### **1\. リポジトリのクローン**
+#### **1. リポジトリのクローン**
 
-git clone https://github.com/your-username/medexam-parser.git  
+```bash
+git clone https://github.com/your-username/medexam-parser.git
 cd medexam-parser
+```
 
-#### **2\. 環境変数の設定**
+#### **2. 環境変数の設定**
 
-LLMを利用するためにAPIキーを設定します。.env.exampleをコピーして.envファイルを作成してください。
+LLMを利用するためにAPIキーを設定します。`.env.example`をコピーして`.env`ファイルを作成してください。
 
+```bash
 cp .env.example .env
+```
 
-その後、.envファイルを開き、お使いのLLMのAPIキーを記述します。
+その後、`.env`ファイルを開き、お使いのLLMのAPIキーを記述します。
 
-\# 例: OpenAI API Key  
-OPENAI\_API\_KEY="your\_api\_key\_here"
+```env
+# 例: Google Gemini API Key
+GOOGLE_API_KEY="your_api_key_here"
+```
 
-#### **3\. 入力PDFの配置**
+#### **3. 入力PDFの配置**
 
-処理したい年度の医師国家試験PDF一式をinput/ディレクトリに配置します。
+処理したい年度の医師国家試験PDF一式を`input/`ディレクトリに配置します。
 
-* **命名規則:** {回数}{ブロック識別子}.pdf  
-* **例:** 118a.pdf, 118d.pdf, 118s.pdf
+*   **命名規則の重要性:** スクリプトはファイル名に基づいて処理内容を自動で判断します。
+    *   **問題文PDF:** `..._01.pdf` で終わるファイル (例: `tp240424-01a_01.pdf`)
+    *   **画像PDF:** `..._02.pdf` で終わるファイル (例: `tp240424-01a_02.pdf`)
+    *   **正答値表PDF:** `...seitou.pdf` を含むファイル (例: `tp240424-01seitou.pdf`)
+*   **処理の自動スキップ:**
+    *   画像PDF (`_02.pdf`) は、テキスト処理が不要なためStep 2, 3が自動的にスキップされます。
+    *   正答値表は、Step 5で正解情報を統合するために使用されます。
 
 #### **4. Dockerコンテナのビルド**
 
-最初に、Dockerイメージをビルドします。このコマンドは一度だけ実行すれば、以降はキャッシュが利用されます。
+最初に、Dockerイメージをビルドします。ソースコードを修正した場合は、このコマンドを再実行して変更を反映させてください。
 
 ```bash
 docker-compose build
@@ -131,27 +142,30 @@ docker-compose build
 
 #### **5. 解析の実行**
 
-`docker-compose run` コマンドを使用して、解析処理を実行します。`--steps` 引数で実行したいステップを、`--files` 引数で対象のPDFを指定できます。
+`docker-compose run` コマンドを使用して、解析処理を実行します。
 
-**特定のステップのみを実行する例:**
+**主要なコマンドライン引数:**
 
-```bash
-# Step1 (生データ抽出) のみ実行
-docker-compose run --rm parser python src/main.py --steps 1
+| 引数 | 説明 | デフォルト値 |
+| :--- | :--- | :--- |
+| `--steps [数値...]` | 実行するステップ番号をスペース区切りで指定します。 | 全ステップ |
+| `--files [ファイル名...]` | 処理対象のPDFファイルをスペース区切りで指定します。 | `input`内の全PDF |
+| `--model-name [モデル名]` | Step 3で使用するLLMモデル名を指定します。 | `gemini-1.5-flash-latest` |
+| `--rate-limit-wait [秒数]`| LLM APIの呼び出し間隔（秒）を指定します。 | `10.0` |
 
-# Step2 (テキスト順序再構成) のみ実行
-docker-compose run --rm parser python src/main.py --steps 2
-```
-
-**特定のファイルに対して複数のステップを実行する例:**
-
-```bash
-docker-compose run --rm parser python src/main.py --steps 1 2 --files tp240424-01a_01.pdf
-```
-
-**引数を指定せずに全ステップを全ファイルに対して実行:**
+**実行例:**
 
 ```bash
+# Step 1, 2, 3 を特定のファイルに対して実行
+docker-compose run --rm parser python src/main.py --steps 1 2 3 --files tp240424-01a_01.pdf
+
+# モデル名を変更して実行
+docker-compose run --rm parser python src/main.py --steps 3 --model-name gemini-pro
+
+# API待機時間を5秒に変更して実行
+docker-compose run --rm parser python src/main.py --steps 3 --rate-limit-wait 5.0
+
+# 引数を指定せずに全ステップを全ファイルに対して実行
 docker-compose run --rm parser python src/main.py
 ```
 
