@@ -1,0 +1,13 @@
+version: '3.8'
+services:
+  parser:
+    build: .
+    container_name: medexam-parser-container
+    working_dir: /app
+    volumes:
+      - ./src:/app/src
+      - ./input:/app/input
+      - ./output:/app/output
+      - ./intermediate:/app/intermediate
+      - ./.env:/app/.env
+    command: python src/main.py

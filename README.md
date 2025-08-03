@@ -88,9 +88,9 @@ graph TD
 
 ## **実装ステップと現状**
 
-* \[ \] **Step 1: Raw Extraction (生データ抽出)**: PDFからテキストと画像の座標情報を抽出する。  
-* \[ \] **Step 2: Text Reordering (テキスト順序再構成)**: 2段組レイアウトを解析し、テキストを正しい順序に並べ替える。  
-* \[ \] **Step 3: Problem Chunking (問題チャンク分割)**: テキストを問題ごとに分割する。OCRの揺れや複雑なレイアウトに対応するため、正規表現 (^問題\\s\*\\\\d+)での分割を試み、失敗した場合はLLMにテキスト全体を渡して分割を依頼する。  
+* [x] **Step 1: Raw Extraction (生データ抽出)**: PDFからテキストと画像の座標情報を抽出する。
+* [x] **Step 2: Text Reordering (テキスト順序再構成)**: 2段組レイアウトを解析し、テキストを正しい順序に並べ替える。
+* [ ] **Step 3: Problem Chunking (問題チャンク分割)**: テキストを問題ごとに分割する。OCRの揺れや複雑なレイアウトに対応するため、正規表現 (^問題\s*\\d+)での分割を試み、失敗した場合はLLMにテキスト全体を渡して分割を依頼する。  
 * \[ \] **Step 4: Structure Parsing (構造化)**: ルールベースとLLMを使い、各問題をJSONオブジェクトに変換する。  
 * \[ \] **Step 5: Answer Integration (正解情報の統合)**: 正答値表を読み込み、各問題に正解データを結合する。  
 * \[ \] **Step 5.5: Summary Output (集計情報出力)**: 各PDFファイルごとの問題数、問題タイプの内訳、画像数などの統計情報を中間ファイルとして出力し、検証を容易にする。  
@@ -121,11 +121,41 @@ OPENAI\_API\_KEY="your\_api\_key\_here"
 * **命名規則:** {回数}{ブロック識別子}.pdf  
 * **例:** 118a.pdf, 118d.pdf, 118s.pdf
 
-#### **4\. Dockerコンテナのビルドと実行**
+#### **4. Dockerコンテナのビルド**
 
-docker-compose up \--build
+最初に、Dockerイメージをビルドします。このコマンドは一度だけ実行すれば、以降はキャッシュが利用されます。
 
-処理が完了すると、output/ディレクトリに成果物が生成されます。
+```bash
+docker-compose build
+```
+
+#### **5. 解析の実行**
+
+`docker-compose run` コマンドを使用して、解析処理を実行します。`--steps` 引数で実行したいステップを、`--files` 引数で対象のPDFを指定できます。
+
+**特定のステップのみを実行する例:**
+
+```bash
+# Step1 (生データ抽出) のみ実行
+docker-compose run --rm parser python src/main.py --steps 1
+
+# Step2 (テキスト順序再構成) のみ実行
+docker-compose run --rm parser python src/main.py --steps 2
+```
+
+**特定のファイルに対して複数のステップを実行する例:**
+
+```bash
+docker-compose run --rm parser python src/main.py --steps 1 2 --files tp240424-01a_01.pdf
+```
+
+**引数を指定せずに全ステップを全ファイルに対して実行:**
+
+```bash
+docker-compose run --rm parser python src/main.py
+```
+
+処理が完了すると、`intermediate/` ディレクトリに各ステップの中間成果物が、`output/` ディレクトリに最終成果物が生成されます。
 
 ## **生成される産物の例**
 
