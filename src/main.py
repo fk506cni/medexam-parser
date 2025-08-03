@@ -7,6 +7,7 @@ sys.path.append(str(Path(__file__).parent))
 
 from steps.step1_extract import extract_raw_data
 from steps.step2_reorder import reorder_text
+from steps.step3_chunk import chunk_text_by_problem
 
 # --- パス設定 ---
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -43,6 +44,19 @@ def run_step2(step1_output_path: Path):
         print(f"  [Step 2] Completed. Output: {result_path}")
     else:
         print(f"  [Step 2] Failed for {step1_output_path.parent.name}.")
+    return result_path
+
+def run_step3(step2_output_path: Path):
+    """Step 3: 問題ごとにテキストをチャンク化する"""
+    if not step2_output_path or not step2_output_path.exists():
+        print(f"  [Step 3] Skipped: Input file not found: {step2_output_path}")
+        return None
+    print(f"  [Step 3] Running Problem Chunking for {step2_output_path.parent.name}...")
+    result_path = chunk_text_by_problem(step2_output_path, INTERMEDIATE_DIR)
+    if result_path:
+        print(f"  [Step 3] Completed. Output: {result_path}")
+    else:
+        print(f"  [Step 3] Failed for {step2_output_path.parent.name}.")
     return result_path
 
 def main():
@@ -104,6 +118,13 @@ def main():
                 step1_output = INTERMEDIATE_DIR / pdf_stem / "step1_raw_extraction.json"
             
             step_outputs[2] = run_step2(step1_output)
+
+        if 3 in args.steps:
+            # Step 3はStep 2の出力に依存する
+            step2_output = step_outputs.get(2)
+            if not step2_output:
+                step2_output = INTERMEDIATE_DIR / pdf_stem / "step2_reordered_text.txt"
+            step_outputs[3] = run_step3(step2_output)
         
         # (ここに後続ステップの呼び出しを追加)
 
