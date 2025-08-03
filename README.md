@@ -79,20 +79,22 @@ graph TD
     F \-- ルールベースで失敗 \--\> G\[LLMによる構造化\];  
     G \--\> H\[構造化データ\];  
     F \-- ルールベースで成功 \--\> H;  
-    I\[正答値表PDF\] \--\> J{Step 5: 正解情報統合};  
-    H \--\> J;  
-    J \--\> K{Step 5.5: 集計情報出力};  
+    I\[正答値表PDF\] \--\> J\_A(Step 5a: 正答値表解析);  
+    H \--\> J\_B(Step 5b: 正解情報統合);  
+    J\_A \--\> J\_B;  
+    J\_B \--\> K{Step 5.5: 集計情報出力};  
     K \--\> L{Step 6: 最終生成};  
     L \--\> M\[JSONファイル出力\];  
     L \--\> N\[画像ファイル出力\];
 
 ## **実装ステップと現状**
 
-* [x] **Step 1: Raw Extraction (生データ抽出)**: PDFからテキストと画像の座標情報を抽出する。
+* [x] **Step 1: Raw Extraction (生データ抽出)**: PDFからテキストと画像の座標情報を抽出する。正答値表PDFに対しては、LLMでの解析に適したプレーンテキスト形式で抽出する。
 * [x] **Step 2: Text Reordering (テキスト順序再構成)**: 2段組レイアウトを解析し、テキストを正しい順序に並べ替える。
 * [x] **Step 3: Problem Chunking (問題チャンク分割)**: テキストを問題ごとに分割する。LLM（大規模言語モデル）を利用して、問題番号を基にテキストをチャンク化する。長いテキストに対応するため、チャンク分割と結果の統合ロジックを実装。  
 * \[ \] **Step 4: Structure Parsing (構造化)**: ルールベースとLLMを使い、各問題をJSONオブジェクトに変換する。  
-* \[ \] **Step 5: Answer Integration (正解情報の統合)**: 正答値表を読み込み、各問題に正解データを結合する。  
+* [x] **Step 5a: Answer Key Parsing (正答値表解析)**: 正答値表PDFから抽出された生データ（Step 1の出力）をLLMで解析し、問題番号と正解のペアを抽出する。
+* \[ \] **Step 5b: Answer Integration (正解情報統合)**: Step 4で構造化された問題データと、Step 5aで解析された正解データを結合する。
 * \[ \] **Step 5.5: Summary Output (集計情報出力)**: 各PDFファイルごとの問題数、問題タイプの内訳、画像数などの統計情報を中間ファイルとして出力し、検証を容易にする。  
 * \[ \] **Step 6: Finalization (最終生成)**: 全てのデータを統合し、最終的なJSONと画像ファイルを出力する。
 
@@ -150,7 +152,7 @@ docker-compose build
 
 | 引数 | 説明 | デフォルト値 |
 | :--- | :--- | :--- |
-| `--steps [数値...]` | 実行するステップ番号をスペース区切りで指定します。 | 全ステップ |
+| `--steps [数値...]` | 実行するステップ番号をスペース区切りで指定します。`5a`, `5b` のようにアルファベットを含むステップも指定可能です。 | 全ステップ |
 | `--files [ファイル名...]` | 処理対象のPDFファイルをスペース区切りで指定します。 | `input`内の全PDF |
 | `--model-name [モデル名]` | Step 3, 4で使用するLLMモデル名を指定します。 | `gemini-2.5-flash-lite` |
 | `--rate-limit-wait [秒数]`| LLM APIの呼び出し間隔（秒）を指定します。 | `10.0` |
@@ -163,6 +165,9 @@ docker-compose build
 ```bash
 # 【推奨】まず最初の1バッチだけを処理して、Step4の動作を確認する
 docker-compose run --rm parser python src/main.py --steps 4 --files tp240424-01a_01.pdf --max-batches 1
+
+# 正答値表のLLM解析 (Step 5a) を実行する
+docker-compose run --rm parser python src/main.py --steps 5a --files tp240424-01seitou.pdf
 
 # 全ステップを特定のファイルに対して実行
 docker-compose run --rm parser python src/main.py --files tp240424-01a_01.pdf
