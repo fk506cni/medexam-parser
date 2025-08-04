@@ -1,4 +1,6 @@
 import argparse
+import json
+import re
 from pathlib import Path
 import sys
 
@@ -25,6 +27,17 @@ def setup_directories():
     INTERMEDIATE_DIR.mkdir(exist_ok=True)
     (OUTPUT_DIR / "json").mkdir(exist_ok=True)
     (OUTPUT_DIR / "images").mkdir(exist_ok=True)
+
+def get_exam_id_from_stem(pdf_stem: str) -> str:
+    """ファイル名から共通の試験ID (例: tp240424-01) を抽出する"""
+    # "tp240424-01a_01" -> "tp240424-01"
+    match = re.match(r"(tp\d{6}-\d{2})", pdf_stem)
+    if match:
+        return match.group(1)
+    # マッチしない場合 (例: 118a) は、そのまま返すか、エラー処理を行う
+    # ここでは、ファイル名からアルファベットとそれに続く数字を除去するロジックを一旦削除し、
+    # 命名規則に厳密に従うことを前提とする
+    return pdf_stem
 
 def run_step1(pdf_path: Path):
     """Step 1: PDFから生データを抽出する"""
@@ -89,36 +102,43 @@ def run_step4(step3_output_path: Path, model_name: str, rate_limit_wait: float, 
         print(f"  [Step 4] Failed for {step3_output_path.parent.name}.")
     return result_path
 
-def run_step5b(structured_problem_paths: list[Path], parsed_answer_key_path: Path):
-    """Step 5b: 正解情報を統合する"""
+def run_step5b(exam_id: str, structured_problem_paths: list[Path], parsed_answer_key_path: Path):
+    """Step 5b: 複数の問題JSONを統合し、正解情報を結合する"""
     if not structured_problem_paths:
-        print("  [Step 5b] Skipped: No structured problem files provided.")
+        print(f"  [Step 5b] Skipped for {exam_id}: No structured problem files found.")
         return None
     if not parsed_answer_key_path or not parsed_answer_key_path.exists():
-        print(f"  [Step 5b] Skipped: Parsed answer key file not found: {parsed_answer_key_path}")
-        return None
+        print(f"  [Step 5b] Skipped for {exam_id}: Parsed answer key file not found: {parsed_answer_key_path}")
+        # 解答キーがなくても、問題ファイルの統合は行う
+        pass
 
     # 複数の問題JSONファイルを1つに統合する
     all_problems = []
     for problem_path in structured_problem_paths:
         try:
             with open(problem_path, 'r', encoding='utf-8') as f:
-                all_problems.extend(json.load(f))
+                problems = json.load(f)
+                if isinstance(problems, list):
+                    all_problems.extend(problems)
+                else:
+                    print(f"  [Step 5b] Warning: Expected a list in {problem_path.name}, but got {type(problems)}. Skipping.")
         except (FileNotFoundError, json.JSONDecodeError) as e:
             print(f"  [Step 5b] Warning: Could not read or parse {problem_path.name}: {e}")
             continue
     
     if not all_problems:
-        print("  [Step 5b] Skipped: No valid problems to process after combining files.")
+        print(f"  [Step 5b] Skipped for {exam_id}: No valid problems to process after combining files.")
         return None
 
-    # 統合した問題リストを一時ファイルに保存してStep5bに渡す
-    exam_id = structured_problem_paths[0].parent.name.split('_')[0]
-    combined_path = INTERMEDIATE_DIR / exam_id / "step4_structured_problems_combined.json"
-    combined_path.parent.mkdir(exist_ok=True)
+    # 統合した問題リストを一時ファイルに保存
+    combined_dir = INTERMEDIATE_DIR / exam_id
+    combined_dir.mkdir(exist_ok=True)
+    combined_path = combined_dir / "step4_structured_problems_combined.json"
     with open(combined_path, 'w', encoding='utf-8') as f:
         json.dump(all_problems, f, ensure_ascii=False, indent=2)
+    print(f"  [Step 5b] Combined {len(all_problems)} problems for exam {exam_id} into {combined_path.name}")
 
+    # 正解情報を統合
     print(f"  [Step 5b] Running Answer Integration for exam {exam_id}...")
     result_path = integrate_answers(
         structured_problems_path=combined_path,
@@ -249,8 +269,7 @@ def main():
     for pdf_path in pdf_files:
         print(f"Processing PDF: {pdf_path.name}")
         pdf_stem = pdf_path.stem
-        # 'tp240424-01seitou' -> 'tp240424-01'
-        exam_id = pdf_stem.replace("seitou", "").rstrip('-')
+        exam_id = get_exam_id_from_stem(pdf_stem)
 
         if exam_id not in exam_intermediate_files:
             exam_intermediate_files[exam_id] = {"step4_outputs": [], "answer_key_extraction_output": None, "parsed_answer_key_output": None}
@@ -308,26 +327,38 @@ def main():
         for exam_id, files in exam_intermediate_files.items():
             print(f"Post-processing for exam: {exam_id}")
             
-            parsed_answer_key_path = None
+            # --- Step 5a: 正答値表の解析 ---
             if '5a' in target_steps:
-                answer_key_extraction_path = files.get("answer_key_extraction_output")
-                if answer_key_extraction_path:
+                # 実行時に生成されたパス、または中間ディレクトリのデフォルトパス
+                answer_key_extraction_path = files.get("answer_key_extraction_output") \
+                    or INTERMEDIATE_DIR / f"{exam_id}seitou" / "step1_raw_extraction.json"
+                
+                if answer_key_extraction_path and answer_key_extraction_path.exists():
                     parsed_answer_key_path = run_step5a(answer_key_extraction_path, args.model_name, args.rate_limit_wait, args.retry_step5a)
                     if parsed_answer_key_path:
                         files["parsed_answer_key_output"] = parsed_answer_key_path
                 else:
                     print(f"  [Step 5a] Skipped for {exam_id}: No answer key extraction file found.")
 
+            # --- Step 5b: 正解情報の統合 ---
             if '5b' in target_steps:
-                # 5aで生成されたパス、または既存のパスを利用
-                final_parsed_answer_key_path = files.get("parsed_answer_key_output") or INTERMEDIATE_DIR / exam_id / "step5a_parsed_answer_key.json"
-                
-                # Step4の出力パスがなければ、ファイルシステムから探す
-                step4_outputs = files.get("step4_outputs")
-                if not step4_outputs:
-                    step4_outputs = list((INTERMEDIATE_DIR / exam_id).glob("step4_structured.json"))
+                # 5aで生成されたパス、または中間ディレクトリのデフォルトパスを探す
+                # 正答ファイル名は "{exam_id}seitou.pdf" と想定
+                answer_key_pdf_stem = f"{exam_id}seitou"
+                final_parsed_answer_key_path = files.get("parsed_answer_key_output") \
+                    or INTERMEDIATE_DIR / answer_key_pdf_stem / "step5a_parsed_answer_key.json"
 
-                run_step5b(step4_outputs, final_parsed_answer_key_path)
+                # Step4の出力パスを収集
+                step4_outputs = files.get("step4_outputs", [])
+                if not step4_outputs:
+                    # `tp240424-01`のようなIDにマッチする全問題PDFの中間ディレクトリを探す
+                    for pdf_path in pdf_files:
+                        if pdf_path.stem.startswith(exam_id) and 'seitou' not in pdf_path.stem:
+                            step4_path = INTERMEDIATE_DIR / pdf_path.stem / "step4_structured_problems.json"
+                            if step4_path.exists():
+                                step4_outputs.append(step4_path)
+                
+                run_step5b(exam_id, step4_outputs, final_parsed_answer_key_path)
 
             print("-" * 30)
 

@@ -25,7 +25,34 @@ def _load_prompt_template() -> str:
         print(f"Error: Prompt file not found at {PROMPT_FILE}")
         raise
 
+# グローバル変数としてプロンプトを読み込む
 PROMPT_TEMPLATE = _load_prompt_template()
+
+def _create_join_key(problem_id: str) -> Optional[str]:
+    """
+    問題IDから解答結合キーを生成する。
+    例: "tp240424-01a_01-1" -> "A-1"
+    """
+    if not problem_id or not isinstance(problem_id, str):
+        return None
+    
+    try:
+        # "tp240424-01a_01-1" -> ["tp240424", "01a_01", "1"]
+        parts = problem_id.split('-')
+        if len(parts) < 3:
+            return None
+
+        # "01a_01" -> "a"
+        block_part = parts[1]
+        block_char = re.sub(r'[^a-zA-Z]', '', block_part).upper()
+
+        # "1"
+        problem_num = parts[2]
+
+        return f"{block_char}-{problem_num}"
+    except (IndexError, TypeError) as e:
+        print(f"Warning: Could not create join_key for '{problem_id}': {e}")
+        return None
 
 def _call_gemini_api(batch_json_str: str, model_name: str) -> Optional[List[Dict]]:
     """LLMを呼び出し、パースされたJSONを返す"""
@@ -122,6 +149,11 @@ def structure_problems(
             time.sleep(rate_limit_wait)
 
         if structured_batch:
+            # 各問題にjoin_keyを追加
+            for problem in structured_batch:
+                problem_id = problem.get("id")
+                problem["join_key"] = _create_join_key(problem_id)
+
             all_structured_problems.extend(structured_batch)
             print(f"    ...Success, {len(structured_batch)} problems structured.")
         else:
