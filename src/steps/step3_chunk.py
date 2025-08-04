@@ -74,7 +74,8 @@ def chunk_text_by_problem(
     step2_output_path: Path, 
     intermediate_dir: Path, 
     rate_limit_wait: float, 
-    model_name: str
+    model_name: str,
+    max_retries: int = 3
 ) -> Optional[Path]:
     """LLMを使ってテキストを問題ごとにチャンク化し、JSONファイルとして保存する"""
     if not API_KEY:
@@ -99,10 +100,16 @@ def chunk_text_by_problem(
         
         for i, chunk in enumerate(text_chunks):
             print(f"  - Processing chunk {i+1}/{len(text_chunks)}...")
-            parsed_json = _call_gemini_api(chunk, model_name)
+            parsed_json = None
+            for attempt in range(max_retries):
+                parsed_json = _call_gemini_api(chunk, model_name)
+                if parsed_json is not None:
+                    break
+                print(f"  - API call failed. Retrying ({attempt+1}/{max_retries})...")
+                time.sleep(rate_limit_wait)
             
             if parsed_json is None:
-                print(f"  - Chunk {i+1} failed due to API error. Skipping.")
+                print(f"  - Chunk {i+1} failed after {max_retries} retries. Skipping.")
                 continue
             
             for problem in parsed_json:

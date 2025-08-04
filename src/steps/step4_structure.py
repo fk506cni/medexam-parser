@@ -62,7 +62,8 @@ def structure_problems(
     model_name: str, 
     rate_limit_wait: float, 
     batch_size: int,
-    max_batches: int
+    max_batches: int,
+    max_retries: int = 3
 ) -> Optional[Path]:
     """問題チャンクのテキストを構造化されたJSONに変換する"""
     if not API_KEY:
@@ -112,13 +113,19 @@ def structure_problems(
         }
         batch_json_str = json.dumps(batch_input, ensure_ascii=False, indent=2)
 
-        structured_batch = _call_gemini_api(batch_json_str, model_name)
+        structured_batch = None
+        for attempt in range(max_retries):
+            structured_batch = _call_gemini_api(batch_json_str, model_name)
+            if structured_batch is not None:
+                break
+            print(f"    ...API call failed. Retrying ({attempt+1}/{max_retries})...")
+            time.sleep(rate_limit_wait)
 
         if structured_batch:
             all_structured_problems.extend(structured_batch)
             print(f"    ...Success, {len(structured_batch)} problems structured.")
         else:
-            print(f"    ...Failed. Skipping this batch.")
+            print(f"    ...Failed after {max_retries} retries. Skipping this batch.")
 
         # 次のAPI呼び出しの前に待機
         if (current_batch_num + 1) < batches_to_process:

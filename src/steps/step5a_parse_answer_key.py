@@ -32,7 +32,8 @@ def parse_answer_key(
     answer_key_extraction_path: Path, 
     intermediate_dir: Path, 
     model_name: str, 
-    rate_limit_wait: float
+    rate_limit_wait: float,
+    max_retries: int = 3
 ):
     print(f"  [Step 5a] Parsing answer key from {answer_key_extraction_path.name} using {model_name}...")
 
@@ -57,11 +58,16 @@ def parse_answer_key(
         print(f"    - Processing page {page['page_number']}...")
         prompt = prompt_template.format(page_text=page_text)
         
-        llm_response = call_llm(prompt, model_name)
-        time.sleep(rate_limit_wait)
+        llm_response = None
+        for attempt in range(max_retries):
+            llm_response = call_llm(prompt, model_name)
+            if llm_response is not None:
+                break
+            print(f"    - API call failed. Retrying ({attempt+1}/{max_retries})...")
+            time.sleep(rate_limit_wait)
 
         if not llm_response:
-            print(f"    - Failed to get response from LLM for page {page['page_number']}.")
+            print(f"    - Failed to get response from LLM for page {page['page_number']} after {max_retries} retries.")
             continue
 
         json_str = extract_json_from_llm_response(llm_response)

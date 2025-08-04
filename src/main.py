@@ -49,7 +49,7 @@ def run_step2(step1_output_path: Path):
         print(f"  [Step 2] Failed for {step1_output_path.parent.name}.")
     return result_path
 
-def run_step3(step2_output_path: Path, rate_limit_wait: float, model_name: str):
+def run_step3(step2_output_path: Path, rate_limit_wait: float, model_name: str, max_retries: int):
     """Step 3: 問題ごとにテキストをチャンク化する"""
     if not step2_output_path or not step2_output_path.exists():
         print(f"  [Step 3] Skipped: Input file not found: {step2_output_path}")
@@ -59,7 +59,8 @@ def run_step3(step2_output_path: Path, rate_limit_wait: float, model_name: str):
         step2_output_path=step2_output_path, 
         intermediate_dir=INTERMEDIATE_DIR, 
         rate_limit_wait=rate_limit_wait,
-        model_name=model_name
+        model_name=model_name,
+        max_retries=max_retries
     )
     if result_path:
         print(f"  [Step 3] Completed. Output: {result_path}")
@@ -67,7 +68,7 @@ def run_step3(step2_output_path: Path, rate_limit_wait: float, model_name: str):
         print(f"  [Step 3] Failed for {step2_output_path.parent.name}.")
     return result_path
 
-def run_step4(step3_output_path: Path, model_name: str, rate_limit_wait: float, batch_size: int, max_batches: int):
+def run_step4(step3_output_path: Path, model_name: str, rate_limit_wait: float, batch_size: int, max_batches: int, max_retries: int):
     """Step 4: 問題を構造化する"""
     if not step3_output_path or not step3_output_path.exists():
         print(f"  [Step 4] Skipped: Input file not found: {step3_output_path}")
@@ -79,7 +80,8 @@ def run_step4(step3_output_path: Path, model_name: str, rate_limit_wait: float, 
         model_name=model_name,
         rate_limit_wait=rate_limit_wait,
         batch_size=batch_size,
-        max_batches=max_batches
+        max_batches=max_batches,
+        max_retries=max_retries
     )
     if result_path:
         print(f"  [Step 4] Completed. Output: {result_path}")
@@ -130,7 +132,7 @@ def run_step5b(structured_problem_paths: list[Path], parsed_answer_key_path: Pat
     return result_path
 
 
-def run_step5a(answer_key_extraction_path: Path, model_name: str, rate_limit_wait: float):
+def run_step5a(answer_key_extraction_path: Path, model_name: str, rate_limit_wait: float, max_retries: int):
     """Step 5a: 正答値表を解析する"""
     if not answer_key_extraction_path or not answer_key_extraction_path.exists():
         print(f"  [Step 5a] Skipped: Input file not found: {answer_key_extraction_path}")
@@ -141,7 +143,8 @@ def run_step5a(answer_key_extraction_path: Path, model_name: str, rate_limit_wai
         answer_key_extraction_path=answer_key_extraction_path,
         intermediate_dir=INTERMEDIATE_DIR,
         model_name=model_name,
-        rate_limit_wait=rate_limit_wait
+        rate_limit_wait=rate_limit_wait,
+        max_retries=max_retries
     )
     if result_path:
         print(f"  [Step 5a] Completed. Output: {result_path}")
@@ -190,6 +193,24 @@ def main():
         type=int,
         default=0,
         help="Step 4で処理する最大のバッチ数を指定します。0の場合は全バッチを処理します。デバッグ用。"
+    )
+    parser.add_argument(
+        "--retry-step3",
+        type=int,
+        default=3,
+        help="Step 3のリトライ回数を指定します。"
+    )
+    parser.add_argument(
+        "--retry-step4",
+        type=int,
+        default=3,
+        help="Step 4のリトライ回数を指定します。"
+    )
+    parser.add_argument(
+        "--retry-step5a",
+        type=int,
+        default=3,
+        help="Step 5aのリトライ回数を指定します。"
     )
     args = parser.parse_args()
 
@@ -265,12 +286,12 @@ def main():
 
         if '3' in executable_steps:
             step2_output = step_outputs.get(2) or INTERMEDIATE_DIR / pdf_stem / "step2_reordered_text.txt"
-            step_outputs[3] = run_step3(step2_output, args.rate_limit_wait, args.model_name)
+            step_outputs[3] = run_step3(step2_output, args.rate_limit_wait, args.model_name, args.retry_step3)
 
         if '4' in executable_steps:
             step3_output = step_outputs.get(3) or INTERMEDIATE_DIR / pdf_stem / "step3_problem_chunks.json"
             step_outputs[4] = run_step4(
-                step3_output, args.model_name, args.rate_limit_wait, args.batch_size, args.max_batches
+                step3_output, args.model_name, args.rate_limit_wait, args.batch_size, args.max_batches, args.retry_step4
             )
             if step_outputs.get(4):
                  exam_intermediate_files[exam_id]["step4_outputs"].append(step_outputs[4])
@@ -287,7 +308,7 @@ def main():
             if '5a' in target_steps:
                 answer_key_extraction_path = files.get("answer_key_extraction_output")
                 if answer_key_extraction_path:
-                    parsed_answer_key_path = run_step5a(answer_key_extraction_path, args.model_name, args.rate_limit_wait)
+                    parsed_answer_key_path = run_step5a(answer_key_extraction_path, args.model_name, args.rate_limit_wait, args.retry_step5a)
                     if parsed_answer_key_path:
                         files["parsed_answer_key_output"] = parsed_answer_key_path
                 else:

@@ -154,6 +154,9 @@ docker-compose build
 | `--rate-limit-wait [秒数]`| LLM APIの呼び出し間隔（秒）を指定します。 | `10.0` |
 | `--batch-size [数値]` | Step 4で一度に処理する問題数を指定します。 | `5` |
 | `--max-batches [数値]` | Step 4で処理する最大バッチ数を指定します（デバッグ用）。`0`の場合は全バッチを処理します。 | `0` |
+| `--retry-step3 [回数]` | Step 3 (問題チャンク分割) のLLM API呼び出しが失敗した際のリトライ回数を指定します。 | `3` |
+| `--retry-step4 [回数]` | Step 4 (構造化) のLLM API呼び出しが失敗した際のリトライ回数を指定します。 | `3` |
+| `--retry-step5a [回数]`| Step 5a (正答値表解析) のLLM API呼び出しが失敗した際のリトライ回数を指定します。 | `3` |
 
 gemini-2.5-flash-liteであれば、rate-limit-waitを60に設定することで1日1440回ぐらいになるので無料枠内に収まるはずです。
 
@@ -162,6 +165,11 @@ gemini-2.5-flash-liteであれば、rate-limit-waitを60に設定することで
 ```bash
 # 【推奨】まず最初の1バッチだけを処理して、Step4の動作を確認する
 docker-compose run --rm parser python src/main.py --steps 4 --files tp240424-01a_01.pdf --max-batches 1
+
+# Step3で3回、Step4で5回リトライするように設定して実行
+docker-compose run --rm parser python src/main.py \
+    --steps 3 4 --files tp240424-01a_01.pdf \
+    --retry-step3 3 --retry-step4 5
 
 # 正答値表のLLM解析 (Step 5a) を実行する
 docker-compose run --rm parser python src/main.py --steps 5a --files tp240424-01seitou.pdf
@@ -175,6 +183,7 @@ docker-compose run --rm parser python src/main.py --steps 4 --model-name gemini-
 # 引数を指定せずに全ステップを全ファイルに対して実行
 docker-compose run --rm parser python src/main.py
 ```
+
 
 処理が完了すると、`intermediate/` ディレクトリに各ステップの中間成果物が、`output/` ディリクトリに最終成果物が生成されます。
 
