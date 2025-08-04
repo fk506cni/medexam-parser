@@ -266,9 +266,13 @@ def main():
         executable_steps = set()
         if file_type == "answer":
             if '5a' in target_steps: executable_steps.add('1') # 5aには1が必要
-            executable_steps.update(target_steps.intersection({'5a', '5b'}))
-        else: # text or image
-            executable_steps = target_steps.intersection({'1', '2', '3', '4'})
+            executable_steps.update(target_steps.intersection({'5a'}))
+        elif file_type == "image":
+            # 画像PDFはStep1（画像抽出）のみ実行
+            executable_steps.update(target_steps.intersection({'1'}))
+        else: # text
+            # テキストPDFはテキスト処理ステップを実行
+            executable_steps.update(target_steps.intersection({'1', '2', '3', '4'}))
 
 
         # 各ステップの出力を管理
