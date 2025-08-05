@@ -208,11 +208,6 @@ docker-compose run --rm parser python src/main.py \
 # Step 7 のみ実行し、生成済みのJSONを使ってLLMに問題を解かせる
 docker-compose run --rm parser python src/main.py --steps 7
 
-# 特定の問題セットを対象に、3回ずつ問題を解かせる
-docker-compose run --rm parser python src/main.py \
-    --steps 7 \
-    --files tp240424-01a_01.pdf \
-    --num-runs 3
 ```
 
 処理が完了すると、`intermediate/` ディレクトリに各ステップの中間成果物が、`output/` ディリクトリに最終成果物が生成されます。Step 7を実行した場合は、`output/step7_solved/`に解答結果が出力されます。
@@ -264,6 +259,7 @@ Step 7を実行した場合、各問題に対するLLMの解答がJSONL形式で
   "llm_response": {
     "answer": "a",
     "reason": "根拠となる医学的知識や、問題文からの解釈など。",
+    "image_findings": "胸部X線写真では、右肺上葉に空洞を伴う腫瘤影を認める。",
     "confidence": "95%~",
     "domains": ["心臟・脈管疾患", "診察"]
   }

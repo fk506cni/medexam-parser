@@ -111,6 +111,11 @@ def run(args):
             cleaned_question = clean_question_for_prompt(question.copy())
             prompt = prompt_template.format(question_json=json.dumps(cleaned_question, ensure_ascii=False, indent=2))
 
+            if args.debug:
+                print("--- LLM Prompt ---")
+                print(prompt)
+                print("--- End of LLM Prompt ---")
+
             for i in range(args.num_runs):
                 print(f"    Run {i+1}/{args.num_runs}...")
                 
@@ -148,8 +153,7 @@ def run(args):
                 with output_file.open("a", encoding="utf-8") as f:
                     f.write(json.dumps(result_entry, ensure_ascii=False) + "\n")
                 
-                # Wait before the next API call (if it's not the last run)
-                if i < args.num_runs - 1:
-                    time.sleep(args.rate_limit_wait)
+                # Wait after every API call to respect rate limits.
+                time.sleep(args.rate_limit_wait)
 
         print(f"Finished processing {file_path.name}. Results saved to {output_file}")

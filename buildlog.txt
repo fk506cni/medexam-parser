@@ -4,7 +4,7 @@
 
 #2 [internal] load build definition from Dockerfile
 #2 transferring dockerfile: 426B 0.0s done
-#2 DONE 0.0s
+#2 DONE 0.1s
 
 #3 [auth] library/python:pull token for registry-1.docker.io
 #3 DONE 0.0s
@@ -21,7 +21,7 @@
 #6 DONE 0.0s
 
 #7 [internal] load build context
-#7 transferring context: 6.81kB 0.1s done
+#7 transferring context: 7.82kB 0.1s done
 #7 DONE 0.2s
 
 #8 [2/5] WORKDIR /app
@@ -38,14 +38,14 @@
 
 #12 exporting to image
 #12 exporting layers 0.1s done
-#12 exporting manifest sha256:1f45e776bc8d8828fbef2b2a0231a45fc000e2b62f1eb695cc5a587a4bf23b7a 0.0s done
-#12 exporting config sha256:083a6268f1c6dd52c8959dd082035c8c0f4e66c79c4c3f12569ab502b176c990 0.0s done
-#12 exporting attestation manifest sha256:1f565adb29633c4eca4c2155af2c1f8182480f62a6f27721f9691f394f9e1f1b 0.0s done
-#12 exporting manifest list sha256:a40848d2cb1efb65e729a4e3d8dd0180ba8cde13f456922369efdfe0b8ca2e06
-#12 exporting manifest list sha256:a40848d2cb1efb65e729a4e3d8dd0180ba8cde13f456922369efdfe0b8ca2e06 0.0s done
+#12 exporting manifest sha256:d45561e43d0cc25e85b031e352133ac44392e2f6cf89e4302abe9154948da12d 0.0s done
+#12 exporting config sha256:ffeb5d700e222f1736eb56653e7a0c39e43b507b731dfd6b2ba0678627a707c0 0.0s done
+#12 exporting attestation manifest sha256:1322be6caadaad9253d622ff6fca1e34edc3ba307c7f4df8f9953b88a506624a 0.0s done
+#12 exporting manifest list sha256:d82915e1854aa76695be9cb35d992eb229511ef160bef07dcde40b748956ec88
+#12 exporting manifest list sha256:d82915e1854aa76695be9cb35d992eb229511ef160bef07dcde40b748956ec88 0.0s done
 #12 naming to docker.io/library/medexam-parser-parser:latest done
-#12 unpacking to docker.io/library/medexam-parser-parser:latest 0.1s done
-#12 DONE 0.4s
+#12 unpacking to docker.io/library/medexam-parser-parser:latest 0.0s done
+#12 DONE 0.3s
 
 #13 resolving provenance for metadata file
 #13 DONE 0.0s
