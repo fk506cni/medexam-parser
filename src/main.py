@@ -236,7 +236,7 @@ def main():
         "--steps",
         nargs='+',
         type=str, # 5a, 5b, 5.5, 6を扱えるようにstr型に変更
-        default=[str(i) for i in range(1, 7)] + ['5.5', '6'], # デフォルトは全ステップ
+        default=['1', '2', '3', '4', '4c', '5a', '5b', '5.5', '6'], # デフォルトは全ステップ
         help="実行するステップ番号をスペース区切りで指定します (例: 1 2 5a 5b 5.5 6)。"
     )
     parser.add_argument(
