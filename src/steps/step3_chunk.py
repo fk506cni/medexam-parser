@@ -38,18 +38,30 @@ def _create_text_chunks(text: str, chunk_size: int, overlap: int) -> List[str]:
         start += chunk_size - overlap
     return chunks
 
-def _call_gemini_api(chunk_text: str, model_name: str) -> Optional[List[Dict]]:
+def _call_gemini_api(chunk_text: str, model_name: str, debug: bool = False) -> Optional[List[Dict]]:
     """LLMを呼び出し、パースされたJSONを返す"""
     try:
         model = genai.GenerativeModel(model_name)
         prompt = PROMPT_TEMPLATE.format(text_content=chunk_text)
+
+        if debug:
+            print("--- DEBUG: LLM Prompt for Step 3 ---")
+            print(prompt)
+            print("--------------------------------------")
+
         response = model.generate_content(prompt)
-        
+        raw_response_text = response.text
+
+        if debug:
+            print("--- DEBUG: LLM Raw Response from Step 3 ---")
+            print(raw_response_text)
+            print("-------------------------------------------")
+
         # ```json ... ``` で囲まれていても、いなくてもJSON配列を抽出する正規表現
-        match = re.search(r"```json\s*(\[.*\])\s*```|(\[.*\])", response.text, re.DOTALL)
+        match = re.search(r"```json\s*(\[.*\])\s*```|(\[.*\])", raw_response_text, re.DOTALL)
         
         if not match:
-            print(f"Warning: LLM did not return a valid JSON array from response: {response.text[:200]}...")
+            print(f"Warning: LLM did not return a valid JSON array. Raw response: {raw_response_text[:300]}...")
             return []
 
         # マッチした部分（キャプチャグループ1または2）からJSONテキストを取得
@@ -75,7 +87,8 @@ def chunk_text_by_problem(
     intermediate_dir: Path, 
     rate_limit_wait: float, 
     model_name: str,
-    max_retries: int = 3
+    max_retries: int = 3,
+    debug: bool = False
 ) -> Optional[Path]:
     """LLMを使ってテキストを問題ごとにチャンク化し、JSONファイルとして保存する"""
     if not API_KEY:
@@ -102,7 +115,7 @@ def chunk_text_by_problem(
             print(f"  - Processing chunk {i+1}/{len(text_chunks)}...")
             parsed_json = None
             for attempt in range(max_retries):
-                parsed_json = _call_gemini_api(chunk, model_name)
+                parsed_json = _call_gemini_api(chunk, model_name, debug)
                 if parsed_json is not None:
                     break
                 print(f"  - API call failed. Retrying ({attempt+1}/{max_retries})...")

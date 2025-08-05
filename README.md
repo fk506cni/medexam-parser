@@ -100,6 +100,11 @@ graph TD
     K --> L{"Step 6: 最終生成"};
     L --> M["JSONファイル出力"];
     L --> N["画像ファイル出力"];
+
+    M --> O{ "Step 7: LLMによる問題解答 (任意)" };
+    N --> O;
+    O --> P[ "解答結果JSONL出力" ];
+
 ```
 
 ## **実装ステップと現状**
@@ -113,6 +118,7 @@ graph TD
 * [x] **Step 5b: Integration (正解・画像情報統合)**: Step 4, 4c, 5a の結果を統合し、問題に正解と画像情報（画像IDとパス）を付与する。
 * [x] **Step 5.5: Summary Output (集計情報出力)**: 各PDFファイルごとの問題数、総画像数、問題タイプの内訳などの統計情報を中間ファイルとして出力する。
 * [x] **Step 6: Finalization (最終生成)**: 全てのデータを統合し、最終的なJSONと画像ファイルを出力する。JSON内の画像パスを更新し、中間ディレクトリの画像を最終出力ディレクトリに整理・リネームする。
+* [x] **Step 7: Problem Solving (LLMによる問題解答)**: (任意実行) Step 6で生成されたJSONと画像をLLMに提示し、問題を解かせる。解答、根拠、自信度、関連領域をJSONL形式で出力する。
 
 ## **実行手順**
 
@@ -167,20 +173,23 @@ docker-compose run --rm parser python src/main.py [引数...]
 
 | 引数 | 説明 | デフォルト値 |
 | :--- | :--- | :--- |
-| `--steps [数値...]` | 実行するステップ番号をスペース区切りで指定します。`5a`, `5b`, `5.5` のように指定可能です。 | 全ステップ |
+| `--steps [数値...]` | 実行するステップ番号をスペース区切りで指定します。`5a`, `5b`, `5.5` のように指定可能です。 | 全ステップ（Step 7除く） |
 | `--files [ファイル名...]` | 処理対象のPDFファイルをスペース区切りで指定します。 | `input`内の全PDF |
-| `--model-name [モデル名]` | Step 3, 4, 5aで使用するLLMモデル名を指定します。 | `gemini-1.5-flash` |
+| `--model-name [モデル名]` | Step 3, 4, 5a, 7で使用するLLMモデル名を指定します。 | `gemini-1.5-flash` |
 | `--rate-limit-wait [秒数]`| LLM API呼び出し間の待機時間（秒）を指定します。 | `10.0` |
 | `--batch-size [数値]` | Step 4で一度に処理する問題数を指定します。 | `5` |
 | `--max-batches [数値]` | Step 4で処理する最大バッチ数を指定します（デバッグ用）。`0`の場合は全バッチを処理します。 | `0` |
 | `--retry-step3 [回数]` | Step 3 のLLM API呼び出しリトライ回数。 | `3` |
 | `--retry-step4 [回数]` | Step 4 のLLM API呼び出しリトライ回数。 | `3` |
 | `--retry-step5a [回数]`| Step 5a のLLM API呼び出しリトライ回数。 | `3` |
+| `--retry-step7 [回数]`| Step 7 のLLM API呼び出しリトライ回数。 | `3` |
+| `--num-runs [回数]`| Step 7で同じ問題を解く回数を指定します。再現性確認用。 | `1` |
+| `--debug` | デバッグモードを有効にし、処理の詳細ログを出力します。 | `False` |
 
 **基本的な実行コマンド:**
 
 ```bash
-# input内の全PDFを対象に、全ステップを実行する（推奨）
+# input内の全PDFを対象に、データ化の全ステップ（1～6）を実行する（推奨）
 docker-compose run --rm parser python src/main.py
 ```
 
@@ -195,13 +204,24 @@ docker-compose run --rm parser python src/main.py \
 docker-compose run --rm parser python src/main.py \
     --steps 1 4c 5b \
     --files tp240424-01a_01.pdf tp240424-01a_02.pdf tp240424-01seitou.pdf
+
+# Step 7 のみ実行し、生成済みのJSONを使ってLLMに問題を解かせる
+docker-compose run --rm parser python src/main.py --steps 7
+
+# 特定の問題セットを対象に、3回ずつ問題を解かせる
+docker-compose run --rm parser python src/main.py \
+    --steps 7 \
+    --files tp240424-01a_01.pdf \
+    --num-runs 3
 ```
 
-処理が完了すると、`intermediate/` ディレクトリに各ステップの中間成果物が、`output/` ディリクトリに最終成果物が生成されます。
+処理が完了すると、`intermediate/` ディレクトリに各ステップの中間成果物が、`output/` ディリクトリに最終成果物が生成されます。Step 7を実行した場合は、`output/step7_solved/`に解答結果が出力されます。
 
 ## **生成される産物の例**
 
 #### **JSONデータ (`output/json/{exam_id}.json`)**
+
+```
 
 **画像を含む選択式問題の例:**
 
@@ -230,6 +250,25 @@ docker-compose run --rm parser python src/main.py \
 #### **画像データ (`output/images/`)**
 
 * `tp240424-01-A-15-A.webp` (試験ID `tp240424-01`, `join_key` `A-15` の画像 `A`)
+
+#### **Step7 解答結果データ (`output/step7_solved/{exam_id}.jsonl`)**
+
+Step 7を実行した場合、各問題に対するLLMの解答がJSONL形式で出力されます。
+
+```json
+{
+  "exam_id": "tp240424-01",
+  "question_id": "tp240424-01a_01-15",
+  "run_index": 1,
+  "timestamp": "2023-10-27T10:00:00.123456",
+  "llm_response": {
+    "answer": "a",
+    "reason": "根拠となる医学的知識や、問題文からの解釈など。",
+    "confidence": "95%~",
+    "domains": ["心臟・脈管疾患", "診察"]
+  }
+}
+```
 
 ## **今後の課題・展望**
 

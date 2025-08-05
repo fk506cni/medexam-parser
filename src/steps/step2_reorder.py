@@ -1,17 +1,19 @@
 import json
 from pathlib import Path
+from typing import List, Dict, Any, Optional
 
-def reorder_text(step1_output_path: Path, intermediate_dir: Path) -> Path:
+def reorder_text(step1_output_path: Path, intermediate_dir: Path) -> Optional[Path]:
     """
-    Step1で抽出した生データからテキストブロックを抽出し、
-    人間が読む順序（上から下、左から右）に並べ替えてテキストファイルとして保存する。
+    Step1で抽出した生データからテキストブロックを抽出し、人間が読む順序
+    （y座標優先、次にx座標）に並べ替えてテキストファイルとして保存する。
+    シンプルなBBoxベースのソートを行う。
 
     Args:
         step1_output_path (Path): Step1の出力JSONファイルのパス。
         intermediate_dir (Path): 中間ファイルを保存する親ディレクトリ。
 
     Returns:
-        Path: 生成されたテキストファイルのパス。
+        Path: 生成されたテキストファイルのパス。エラーの場合はNone。
     """
     pdf_stem = step1_output_path.parent.name
     step_output_dir = intermediate_dir / pdf_stem
@@ -26,35 +28,26 @@ def reorder_text(step1_output_path: Path, intermediate_dir: Path) -> Path:
 
     full_text = ""
     for page_data in all_pages_data:
-        blocks = page_data.get("text_blocks", [])
-        
-        # テキストブロックを行ごとにグループ化し、座標情報も保持
-        lines = {}
-        for block in blocks:
-            if block.get("type") == 0: # 0はテキストブロック
-                for line in block.get("lines", []):
-                    # y0をキーとして行をグループ化
-                    y0 = round(line["bbox"][1])
-                    if y0 not in lines:
-                        lines[y0] = []
-                    
-                    # 行に属するスパン（テキスト片）とx座標を追加
-                    for span in line.get("spans", []):
-                        lines[y0].append((span["bbox"][0], span["text"]))
+        page_num = page_data.get('page_number', 'N/A')
+        text_blocks: List[Dict[str, Any]] = page_data.get("text_blocks", [])
 
-        # y座標でソートされた行キーを取得
-        sorted_y = sorted(lines.keys())
+        if not text_blocks:
+            continue
 
-        # 各行内でx座標でスパンをソートし、テキストを結合
-        reordered_page_text = ""
-        for y in sorted_y:
-            # 同じ行にあるテキスト片をx座標でソート
-            line_spans = sorted(lines[y], key=lambda item: item[0])
-            reordered_page_text += "".join(span[1] for span in line_spans) + "\n"
+        # テキストブロックをy座標(bbox[1])、次にx座標(bbox[0])でソート
+        try:
+            sorted_blocks = sorted(text_blocks, key=lambda b: (b["bbox"][1], b["bbox"][0]))
+        except (KeyError, IndexError) as e:
+            print(f"Warning: Could not sort blocks on page {page_num} due to unexpected block format: {e}")
+            # ソートに失敗した場合は、元の順序で処理を試みる
+            sorted_blocks = text_blocks
+
+        reordered_page_text = "\n".join([block.get("text", "") for block in sorted_blocks])
         
-        full_text += f"--- Page {page_data.get('page_number', 'N/A')} ---\n"
+        full_text += f"--- Page {page_num} ---\n"
+
         full_text += reordered_page_text
-        full_text += "\n"
+        full_text += "\n\n"
 
     # 並べ替えたテキストをファイルに保存
     output_path = step_output_dir / "step2_reordered_text.txt"

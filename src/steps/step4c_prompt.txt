@@ -1,0 +1,23 @@
+You are an intelligent assistant mapping exam questions to their corresponding images.
+
+I will provide you with two pieces of information:
+1.  `Structured Questions`: A list of questions from the main booklet, each with a `join_key` and `text`.
+2.  `Image Booklet Pages`: A list of page data from the supplementary image booklet. Each page contains a list of `blocks`, which can be of type `text` or `image`. Crucially, `image` blocks now have an `image_path` field AND an `associated_text` field, which contains the text found closest to that image on the page.
+
+**Your primary goal is to create a JSON object that maps the `join_key` from `Structured Questions` to the correct `image_path` from `Image Booklet Pages`.**
+
+**Instructions & Logic:**
+
+1.  **Analyze `Structured Questions`:** Examine the question text for references to supplementary images (e.g., "別冊No. 1 図Aを示す").
+2.  **Locate Image using `associated_text`:** For each reference, find the corresponding image in `Image Booklet Pages`. The `associated_text` field of each image block (e.g., "No. 1 （A 問題15）") is the most important clue for matching.
+3.  **Extract `image_path`:** Once matched, extract the value of the `image_path` field from the identified image block.
+4.  **Construct Output JSON:** Create a single JSON object. The keys MUST be the `join_key`s. The values MUST be a list containing ONLY the `image_path` strings.
+
+**CRITICAL RULES FOR OUTPUT:**
+- The output MUST be a single, valid JSON object. No other text, explanations, or markdown formatting (like ```json) should be included.
+- The values in the output JSON (the lists) MUST contain ONLY the `image_path` strings (e.g., "intermediate/tp240424-01a_02/images/tp240424-01a_02-p05-i01.webp"). Do NOT include `associated_text`, `filename`, or any other text.
+- Each `image_path` should be associated with the correct `join_key` based on a logical connection.
+- If multiple images belong to one question, their `image_path`s should be in a single list for that `join_key`.
+- If an image cannot be confidently mapped, do NOT include it in the output.
+
+Here is the data:

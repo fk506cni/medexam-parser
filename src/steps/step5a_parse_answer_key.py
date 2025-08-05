@@ -82,9 +82,8 @@ def parse_answer_key(
         print("  [Step 5a] Could not parse any answers from the document.")
         return None
 
-    exam_id = answer_key_extraction_path.parent.name.replace("_seitou", "").rstrip('-')
-    output_dir = intermediate_dir / exam_id
-    output_dir.mkdir(exist_ok=True, parents=True)
+    # 出力パスは、入力ファイルと同じディレクトリに保存する
+    output_dir = answer_key_extraction_path.parent
     output_path = output_dir / "step5a_parsed_answer_key.json"
 
     with open(output_path, 'w', encoding='utf-8') as f:

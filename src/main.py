@@ -16,6 +16,7 @@ from steps.step5a_parse_answer_key import parse_answer_key
 from steps.step5b_integrate_answers import integrate_answers
 from steps.step5_5_create_summary import create_summary
 from steps.step6_finalize import finalize_output
+from steps.step7_solve_problem import run as run_step7
 
 # --- パス設定 ---
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -65,7 +66,7 @@ def run_step2(step1_output_path: Path):
         print(f"  [Step 2] Failed for {step1_output_path.parent.name}.")
     return result_path
 
-def run_step3(step2_output_path: Path, rate_limit_wait: float, model_name: str, max_retries: int):
+def run_step3(step2_output_path: Path, rate_limit_wait: float, model_name: str, max_retries: int, debug: bool):
     """Step 3: 問題ごとにテキストをチャンク化する"""
     if not step2_output_path or not step2_output_path.exists():
         print(f"  [Step 3] Skipped: Input file not found: {step2_output_path}")
@@ -76,7 +77,8 @@ def run_step3(step2_output_path: Path, rate_limit_wait: float, model_name: str, 
         intermediate_dir=INTERMEDIATE_DIR, 
         rate_limit_wait=rate_limit_wait,
         model_name=model_name,
-        max_retries=max_retries
+        max_retries=max_retries,
+        debug=debug
     )
     if result_path:
         print(f"  [Step 3] Completed. Output: {result_path}")
@@ -292,6 +294,18 @@ def main():
         action="store_true",
         help="デバッグメッセージを有効にします。"
     )
+    parser.add_argument(
+        "--retry-step7",
+        type=int,
+        default=3,
+        help="Step 7のリトライ回数を指定します。"
+    )
+    parser.add_argument(
+        "--num-runs",
+        type=int,
+        default=1,
+        help="Step 7で同じ問題を複数回解く回数を指定します。"
+    )
     
     args = parser.parse_args()
 
@@ -401,7 +415,7 @@ def main():
 
         if '3' in executable_steps:
             step2_output = step_outputs.get(2) or INTERMEDIATE_DIR / pdf_stem / "step2_reordered_text.txt"
-            step_outputs[3] = run_step3(step2_output, args.rate_limit_wait, args.model_name, args.retry_step3)
+            step_outputs[3] = run_step3(step2_output, args.rate_limit_wait, args.model_name, args.retry_step3, args.debug)
 
         if '4' in executable_steps:
             step3_output = step_outputs.get(3) or INTERMEDIATE_DIR / pdf_stem / "step3_problem_chunks.json"
@@ -472,6 +486,11 @@ def main():
                 run_step6(integrated_json_path)
 
             print("-" * 30)
+
+    if '7' in target_steps:
+        print("--- Running Step 7: Solve Problems ---")
+        run_step7(args)
+        print("-" * 30)
 
 
     print("All specified tasks finished.")
