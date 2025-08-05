@@ -5,3 +5,4 @@
 /output/
 /intermediate/
 .env
+.ipynb_checkpoints/
