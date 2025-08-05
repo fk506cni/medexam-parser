@@ -11,8 +11,11 @@ from steps.step1_extract import extract_raw_data
 from steps.step2_reorder import reorder_text
 from steps.step3_chunk import chunk_text_by_problem
 from steps.step4_structure import structure_problems
+from steps.step4c_map_images import map_images_to_questions
 from steps.step5a_parse_answer_key import parse_answer_key
 from steps.step5b_integrate_answers import integrate_answers
+from steps.step5_5_create_summary import create_summary
+from steps.step6_finalize import finalize_output
 
 # --- パス設定 ---
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -102,8 +105,29 @@ def run_step4(step3_output_path: Path, model_name: str, rate_limit_wait: float, 
         print(f"  [Step 4] Failed for {step3_output_path.parent.name}.")
     return result_path
 
-def run_step5b(exam_id: str, structured_problem_paths: list[Path], parsed_answer_key_path: Path):
-    """Step 5b: 複数の問題JSONを統合し、正解情報を結合する"""
+def run_step4c(step1_output_path: Path, structured_problem_path: Path):
+    """Step 4c: 画像と問題をマッピングする"""
+    if not step1_output_path or not step1_output_path.exists():
+        print(f"  [Step 4c] Skipped: Input file not found: {step1_output_path}")
+        return None
+    if not structured_problem_path or not structured_problem_path.exists():
+        print(f"  [Step 4c] Skipped: Corresponding structured problem file not found: {structured_problem_path}")
+        return None
+        
+    print(f"  [Step 4c] Running Image-Question Mapping for {step1_output_path.parent.name}...")
+    result_path = map_images_to_questions(
+        step1_output_path=step1_output_path,
+        structured_problem_path=structured_problem_path,
+        intermediate_dir=INTERMEDIATE_DIR,
+    )
+    if result_path:
+        print(f"  [Step 4c] Completed. Output: {result_path}")
+    else:
+        print(f"  [Step 4c] Failed for {step1_output_path.parent.name}.")
+    return result_path
+
+def run_step5b(exam_id: str, structured_problem_paths: list[Path], parsed_answer_key_path: Path, image_mapping_paths: list[Path]):
+    """Step 5b: 複数の問題JSONを統合し、正解と画像情報を結合する"""
     if not structured_problem_paths:
         print(f"  [Step 5b] Skipped for {exam_id}: No structured problem files found.")
         return None
@@ -138,11 +162,12 @@ def run_step5b(exam_id: str, structured_problem_paths: list[Path], parsed_answer
         json.dump(all_problems, f, ensure_ascii=False, indent=2)
     print(f"  [Step 5b] Combined {len(all_problems)} problems for exam {exam_id} into {combined_path.name}")
 
-    # 正解情報を統合
-    print(f"  [Step 5b] Running Answer Integration for exam {exam_id}...")
+    # 正解情報と画像情報を統合
+    print(f"  [Step 5b] Running Integration for exam {exam_id}...")
     result_path = integrate_answers(
         structured_problems_path=combined_path,
         parsed_answer_key_path=parsed_answer_key_path,
+        image_mapping_paths=image_mapping_paths, # 画像マッピングファイルのパスリストを渡す
         intermediate_dir=INTERMEDIATE_DIR
     )
     if result_path:
@@ -172,6 +197,36 @@ def run_step5a(answer_key_extraction_path: Path, model_name: str, rate_limit_wai
         print(f"  [Step 5a] Failed for {answer_key_extraction_path.parent.name}.")
     return result_path
 
+def run_step5_5(integrated_json_path: Path):
+    """Step 5.5: 集計情報を作成する"""
+    if not integrated_json_path or not integrated_json_path.exists():
+        print(f"  [Step 5.5] Skipped: Input file not found: {integrated_json_path}")
+        return None
+    
+    print(f"  [Step 5.5] Running Create Summary for {integrated_json_path.name}...")
+    summary_path = integrated_json_path.parent / "step5_5_summary.json"
+    create_summary(integrated_json_path, summary_path)
+    return summary_path
+
+def run_step6(integrated_json_path: Path):
+    """Step 6: 最終生成を行う"""
+    if not integrated_json_path or not integrated_json_path.exists():
+        print(f"  [Step 6] Skipped: Input file not found: {integrated_json_path}")
+        return None
+    
+    print(f"  [Step 6] Running Finalization for {integrated_json_path.name}...")
+    final_json_path = finalize_output(
+        integrated_json_path=integrated_json_path,
+        output_json_dir=OUTPUT_DIR / "json",
+        output_image_dir=OUTPUT_DIR / "images",
+        intermediate_dir=INTERMEDIATE_DIR
+    )
+    if final_json_path:
+        print(f"  [Step 6] Completed. Output: {final_json_path}")
+    else:
+        print(f"  [Step 6] Failed for {integrated_json_path.name}.")
+    return final_json_path
+
 def main():
     """
     コマンドライン引数に基づいて、指定されたステップとファイルで解析処理を実行する。
@@ -180,9 +235,9 @@ def main():
     parser.add_argument(
         "--steps",
         nargs='+',
-        type=str, # 5a, 5bを扱えるようにstr型に変更
-        default=[str(i) for i in range(1, 7)], # デフォルトは全ステップ
-        help="実行するステップ番号をスペース区切りで指定します (例: 1 2 5a 5b)。"
+        type=str, # 5a, 5b, 5.5, 6を扱えるようにstr型に変更
+        default=[str(i) for i in range(1, 7)] + ['5.5', '6'], # デフォルトは全ステップ
+        help="実行するステップ番号をスペース区切りで指定します (例: 1 2 5a 5b 5.5 6)。"
     )
     parser.add_argument(
         "--files",
@@ -232,6 +287,7 @@ def main():
         default=3,
         help="Step 5aのリトライ回数を指定します。"
     )
+    
     args = parser.parse_args()
 
     setup_directories()
@@ -272,7 +328,13 @@ def main():
         exam_id = get_exam_id_from_stem(pdf_stem)
 
         if exam_id not in exam_intermediate_files:
-            exam_intermediate_files[exam_id] = {"step4_outputs": [], "answer_key_extraction_output": None, "parsed_answer_key_output": None}
+            exam_intermediate_files[exam_id] = {
+                "step4_outputs": [], 
+                "answer_key_extraction_output": None, 
+                "parsed_answer_key_output": None,
+                "image_extraction_outputs": [],
+                "image_mapping_outputs": []
+            }
 
         # ファイル名からファイルタイプを判定
         file_type = "text"
@@ -287,8 +349,8 @@ def main():
             if '5a' in target_steps: executable_steps.add('1') # 5aには1が必要
             executable_steps.update(target_steps.intersection({'5a'}))
         elif file_type == "image":
-            # 画像PDFはStep1（画像抽出）のみ実行
-            executable_steps.update(target_steps.intersection({'1'}))
+            # 画像PDFはStep1（画像抽出）とStep4c（画像マッピング）を実行
+            executable_steps.update(target_steps.intersection({'1', '4c'}))
         else: # text
             # テキストPDFはテキスト処理ステップを実行
             executable_steps.update(target_steps.intersection({'1', '2', '3', '4'}))
@@ -301,7 +363,32 @@ def main():
             step_outputs[1] = run_step1(pdf_path)
             if file_type == "answer":
                 exam_intermediate_files[exam_id]["answer_key_extraction_output"] = step_outputs[1]
+            elif file_type == "image":
+                exam_intermediate_files[exam_id]["image_extraction_outputs"].append(step_outputs[1])
 
+        if '4c' in executable_steps:
+            # step4cは、問題PDFと画像PDFの両方の情報が必要
+            # 1. 画像PDFのstep1生データ
+            step1_output = step_outputs.get(1) or INTERMEDIATE_DIR / pdf_stem / "step1_raw_extraction.json"
+
+            # 2. 対応する問題PDFのstep4構造化データを見つける
+            # 例: tp240424-01a_02.pdf -> tp240424-01a_01.pdf
+            problem_pdf_stem = pdf_stem.replace('_02', '_01')
+            structured_problem_path = INTERMEDIATE_DIR / problem_pdf_stem / "step4_structured_problems.json"
+            
+            # もし実行キャッシュに見つかればそれを使う
+            if not structured_problem_path.exists():
+                for path in exam_intermediate_files[exam_id].get("step4_outputs", []):
+                    if problem_pdf_stem in str(path):
+                        structured_problem_path = path
+                        break
+
+            step_outputs['4c'] = run_step4c(
+                step1_output, 
+                structured_problem_path,
+            )
+            if step_outputs.get('4c'):
+                exam_intermediate_files[exam_id]["image_mapping_outputs"].append(step_outputs['4c'])
 
         if '2' in executable_steps:
             step1_output = step_outputs.get(1) or INTERMEDIATE_DIR / pdf_stem / "step1_raw_extraction.json"
@@ -353,12 +440,31 @@ def main():
                 if not step4_outputs:
                     # `tp240424-01`のようなIDにマッチする全問題PDFの中間ディレクトリを探す
                     for pdf_path in pdf_files:
-                        if pdf_path.stem.startswith(exam_id) and 'seitou' not in pdf_path.stem:
+                        if pdf_path.stem.startswith(exam_id) and 'seitou' not in pdf_path.stem and not pdf_path.name.endswith("_02.pdf"):
                             step4_path = INTERMEDIATE_DIR / pdf_path.stem / "step4_structured_problems.json"
                             if step4_path.exists():
                                 step4_outputs.append(step4_path)
                 
-                run_step5b(exam_id, step4_outputs, final_parsed_answer_key_path)
+                # Step4cの出力パスを収集
+                image_mapping_paths = files.get("image_mapping_outputs", [])
+                if not image_mapping_paths:
+                    for pdf_path in pdf_files:
+                        if pdf_path.stem.startswith(exam_id) and pdf_path.name.endswith("_02.pdf"):
+                            mapping_path = INTERMEDIATE_DIR / pdf_path.stem / "step4c_image_mapping.json"
+                            if mapping_path.exists():
+                                image_mapping_paths.append(mapping_path)
+
+                run_step5b(exam_id, step4_outputs, final_parsed_answer_key_path, image_mapping_paths)
+
+            # --- Step 5.5: 集計情報の作成 ---
+            if '5.5' in target_steps:
+                integrated_json_path = INTERMEDIATE_DIR / exam_id / "step5b_integrated_answers.json"
+                run_step5_5(integrated_json_path)
+
+            # --- Step 6: 最終生成 ---
+            if '6' in target_steps:
+                integrated_json_path = INTERMEDIATE_DIR / exam_id / "step5b_integrated_answers.json"
+                run_step6(integrated_json_path)
 
             print("-" * 30)
 
