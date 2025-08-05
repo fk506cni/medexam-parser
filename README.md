@@ -112,9 +112,9 @@ graph TD
     L --> M["JSON File Output"];
     L --> N["Image File Output"];
 
-    M --> O{ "Step 7: LLM Problem Solving" };
+    M --> O{"Step 7: LLM Problem Solving"};
     N --> O;
-    O --> P[ "Solved Result JSONL Output" ];
+    O --> P["Solved Result JSONL Output"];
 ```
 
 ## **実装ステップと現状 / Implementation Steps and Status**
