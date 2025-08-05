@@ -42,10 +42,10 @@ def get_exam_id_from_stem(pdf_stem: str) -> str:
     # 命名規則に厳密に従うことを前提とする
     return pdf_stem
 
-def run_step1(pdf_path: Path):
+def run_step1(pdf_path: Path, debug: bool):
     """Step 1: PDFから生データを抽出する"""
     print(f"  [Step 1] Running Raw Extraction for {pdf_path.name}...")
-    result_path = extract_raw_data(pdf_path, INTERMEDIATE_DIR)
+    result_path = extract_raw_data(pdf_path, INTERMEDIATE_DIR, debug)
     if result_path:
         print(f"  [Step 1] Completed. Output: {result_path}")
     else:
@@ -287,6 +287,11 @@ def main():
         default=3,
         help="Step 5aのリトライ回数を指定します。"
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="デバッグメッセージを有効にします。"
+    )
     
     args = parser.parse_args()
 
@@ -360,7 +365,7 @@ def main():
         step_outputs = {}
 
         if '1' in executable_steps:
-            step_outputs[1] = run_step1(pdf_path)
+            step_outputs[1] = run_step1(pdf_path, args.debug)
             if file_type == "answer":
                 exam_intermediate_files[exam_id]["answer_key_extraction_output"] = step_outputs[1]
             elif file_type == "image":

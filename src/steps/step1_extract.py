@@ -14,7 +14,7 @@ def calculate_distance(point1, point2):
     """Calculate the Euclidean distance between two points."""
     return math.sqrt((point1[0] - point2[0])**2 + (point1[1] - point2[1])**2)
 
-def extract_raw_data(pdf_path: Path, intermediate_dir: Path):
+def extract_raw_data(pdf_path: Path, intermediate_dir: Path, debug: bool = False):
     """
     PDFからテキスト、画像、およびそれらの座標情報を抽出し、中間ファイルとして保存する。
     ファイル名に 'seitou' が含まれる場合は、ページごとにプレーンテキストを抽出する。
@@ -32,10 +32,12 @@ def extract_raw_data(pdf_path: Path, intermediate_dir: Path):
 
     all_data = []
 
-    print(f"  [Step 1 Debug] Starting page iteration. Total pages: {len(doc)}")
+    if debug:
+        print(f"  [Step 1 Debug] Starting page iteration. Total pages: {len(doc)}")
     for page_num in range(len(doc)):
         page = doc.load_page(page_num)
-        print(f"  [Step 1 Debug] Processing page {page_num + 1}/{len(doc)}...")
+        if debug:
+            print(f"  [Step 1 Debug] Processing page {page_num + 1}/{len(doc)}...")
         
         if "seitou" in pdf_path.name:
             # 正答値表はページごとのプレーンテキスト
@@ -53,10 +55,12 @@ def extract_raw_data(pdf_path: Path, intermediate_dir: Path):
                         "bbox": block["bbox"],
                         "text": "".join([span["text"] for line in block["lines"] for span in line["spans"]])
                     })
-            print(f"  [Step 1 Debug] Page {page_num + 1}: Found {len(text_blocks_on_page)} text blocks.")
+            if debug:
+                print(f"  [Step 1 Debug] Page {page_num + 1}: Found {len(text_blocks_on_page)} text blocks.")
 
             image_list = page.get_images(full=True)
-            print(f"  [Step 1 Debug] Page {page_num + 1}: Found {len(image_list)} images.")
+            if debug:
+                print(f"  [Step 1 Debug] Page {page_num + 1}: Found {len(image_list)} images.")
 
             page_data = {
                 "page_number": page_num + 1,
@@ -69,11 +73,10 @@ def extract_raw_data(pdf_path: Path, intermediate_dir: Path):
             image_output_dir.mkdir(exist_ok=True)
 
             for img_index, img in enumerate(image_list):
-                print(f"  [Step 1 Debug] Page {page_num + 1}: Processing image {img_index + 1}/{len(image_list)}...")
+                if debug:
+                    print(f"  [Step 1 Debug] Page {page_num + 1}: Processing image {img_index + 1}/{len(image_list)}...")
                 xref = img[0]
                 base_image = doc.extract_image(xref)
-                image_bytes = base_image["image"]
-                image_ext = base_image["ext"]
 
                 img_rects = page.get_image_rects(xref)
                 
@@ -95,10 +98,12 @@ def extract_raw_data(pdf_path: Path, intermediate_dir: Path):
                         img_pil = Image.frombytes(mode, [pix.width, pix.height], pix.samples)
                         img_pil.save(image_path_abs, format="WebP", lossless=True)
                         pix = None
-                        print(f"  [Step 1 Debug] Page {page_num + 1}, Image {img_index + 1}: Image saved to {image_path_abs.name}")
+                        if debug:
+                            print(f"  [Step 1 Debug] Page {page_num + 1}, Image {img_index + 1}: Image saved to {image_path_abs.name}")
 
                         # --- 画像に最も近いテキストを関連付けるロジック ---
-                        print(f"  [Step 1 Debug] Page {page_num + 1}, Image {img_index + 1}: Finding associated text...")
+                        if debug:
+                            print(f"  [Step 1 Debug] Page {page_num + 1}, Image {img_index + 1}: Finding associated text...")
                         image_centroid = calculate_centroid(bbox)
                         closest_text = ""
                         min_distance = float('inf')
@@ -110,9 +115,6 @@ def extract_raw_data(pdf_path: Path, intermediate_dir: Path):
                             text_centroid = calculate_centroid(text_block["bbox"])
                             distance = calculate_distance(image_centroid, text_centroid)
                             
-                            # 画像のすぐ上にあるテキストを優先的に関連付ける
-                            # テキストブロックが画像のY座標より上で、かつX座標が重なる範囲にある場合
-                            # 明示的にfloat型にキャストして、予期せぬ型比較エラーを防ぐ
                             text_bbox_bottom = float(text_block["bbox"][3])
                             image_bbox_top = float(bbox[1])
                             text_bbox_left = float(text_block["bbox"][0])
@@ -122,13 +124,13 @@ def extract_raw_data(pdf_path: Path, intermediate_dir: Path):
 
                             if text_bbox_bottom < image_bbox_top and \
                                 max(text_bbox_left, image_bbox_left) < min(text_bbox_right, image_bbox_right):
-                                # Y軸方向の距離を重視
-                                distance = abs(text_bbox_bottom - image_bbox_top) * 0.5 + distance * 0.5 # 調整係数
+                                distance = abs(text_bbox_bottom - image_bbox_top) * 0.5 + distance * 0.5
                             
                             if distance < min_distance:
                                 min_distance = distance
                                 closest_text = text_block["text"]
-                        print(f"  [Step 1 Debug] Page {page_num + 1}, Image {img_index + 1}: Associated text found: '{closest_text[:30]}...' ")
+                        if debug:
+                            print(f"  [Step 1 Debug] Page {page_num + 1}, Image {img_index + 1}: Associated text found: '{closest_text[:30]}...' ")
                         # --------------------------------------------------
                         
                         page_data["images"].append({
@@ -136,19 +138,22 @@ def extract_raw_data(pdf_path: Path, intermediate_dir: Path):
                             "bbox": bbox,
                             "filename": image_filename,
                             "image_path": str(image_path_abs.relative_to(step_output_dir)),
-                            "associated_text": closest_text # 新しく追加
+                            "associated_text": closest_text
                         })
                     except Exception as e:
                         print(f"  [Step 1] Warning: Could not save image {image_filename}: {e}")
                         continue
                 else:
-                    print(f"  [Step 1 Debug] Page {page_num + 1}, Image {img_index + 1}: No bounding box found for image. Skipping.")
+                    if debug:
+                        print(f"  [Step 1 Debug] Page {page_num + 1}, Image {img_index + 1}: No bounding box found for image. Skipping.")
 
         all_data.append(page_data)
-        print(f"  [Step 1 Debug] Finished processing page {page_num + 1}.")
+        if debug:
+            print(f"  [Step 1 Debug] Finished processing page {page_num + 1}.")
 
     output_path = step_output_dir / "step1_raw_extraction.json"
-    print(f"  [Step 1 Debug] Writing final output to {output_path}...")
+    if debug:
+        print(f"  [Step 1 Debug] Writing final output to {output_path}...")
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(all_data, f, ensure_ascii=False, indent=2)
 
