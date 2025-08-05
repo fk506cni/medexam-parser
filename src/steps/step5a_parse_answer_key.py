@@ -24,9 +24,11 @@ def call_llm(prompt: str, model_name: str):
 
 def extract_json_from_llm_response(response_text: str):
     """LLMの応答からJSON部分を抽出する / Extracts the JSON part from the LLM's response."""
-    match = re.search(r'```json
+    # トリプルクォートを使い、複数行の正規表現を正しく扱う
+    # Use triple quotes to correctly handle multi-line regular expressions
+    match = re.search(r'''```json
 (.*?)
-```', response_text, re.DOTALL)
+```''', response_text, re.DOTALL)
     if match:
         return match.group(1)
     return response_text # JSONが直接返された場合 / If JSON is returned directly

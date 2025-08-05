@@ -26,18 +26,36 @@ DEFAULT_OUTPUT_DIR = "output/step7_solved"
 PROMPT_TEMPLATE_PATH = Path(__file__).parent / "step7_prompt.txt"
 
 # --- LLM API Call ---
-def call_llm_api(model, prompt, images, retry, rate_limit_wait):
-    """LLM APIをリトライロジック付きで呼び出す。/ Calls the LLM API with retry logic."""
+def call_and_parse_llm_api(model, prompt, images, retry, rate_limit_wait):
+    """LLM APIを呼び出し、レスポンスをパースする。失敗した場合はリトライする。
+    Calls the LLM API, parses the response, and retries on failure.
+    """
     for i in range(retry):
+        # 1. LLM APIの呼び出し / 1. Call LLM API
         try:
             contents = [prompt] + images
             response = model.generate_content(contents)
-            return response.text
+            response_text = response.text
         except Exception as e:
-            print(f"API call failed (attempt {i+1}/{retry}): {e}")
+            print(f"      API call failed (attempt {i+1}/{retry}): {e}")
             if i < retry - 1:
                 time.sleep(rate_limit_wait)
-    return None
+            continue # 次のリトライへ / Continue to the next retry
+
+        # 2. レスポンスのパース / 2. Parse Response
+        try:
+            json_part = response_text.strip().split('```json\n')[1].split('\n```')[0]
+            parsed_json = json.loads(json_part)
+            return parsed_json # 成功 / Success
+        except (json.JSONDecodeError, IndexError) as e:
+            print(f"      Error parsing LLM response (attempt {i+1}/{retry}): {e}")
+            print(f"      Raw response: {response_text}")
+            if i < retry - 1:
+                time.sleep(rate_limit_wait)
+            # パース失敗時もリトライ / Retry on parsing failure as well
+    
+    # 全てのリトライが失敗した場合 / If all retries fail
+    return {"error": "Failed to get and parse LLM response after retries.", "raw_response": response_text if 'response_text' in locals() else "No response"}
 
 def clean_question_for_prompt(question_data):
     """プロンプトをクリーンにするため、問題データから解答キーを削除する。/ Removes answer key from question data to create a clean prompt."""
@@ -121,27 +139,13 @@ def run(args):
             for i in range(args.num_runs):
                 print(f"    Run {i+1}/{args.num_runs}...")
                 
-                llm_response_text = call_llm_api(
+                llm_answer = call_and_parse_llm_api(
                     model, 
                     prompt, 
                     images_to_send,
                     args.retry_step7, 
                     args.rate_limit_wait
                 )
-
-                # Parse LLM response
-                llm_answer = None
-                if llm_response_text:
-                    try:
-                        # Extract JSON part from the response
-                        json_part = llm_response_text.strip().split('```json\n')[1].split('\n```')[0]
-                        llm_answer = json.loads(json_part)
-                    except (json.JSONDecodeError, IndexError) as e:
-                        print(f"      Error parsing LLM response: {e}")
-                        print(f"      Raw response: {llm_response_text}")
-                        llm_answer = {"error": "Failed to parse JSON", "raw_response": llm_response_text}
-                else:
-                    llm_answer = {"error": "No response from LLM after retries."}
 
                 # --- 結果を保存 / Save Result ---
                 result_entry = {
