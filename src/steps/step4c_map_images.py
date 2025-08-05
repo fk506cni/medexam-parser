@@ -6,16 +6,20 @@ from typing import Dict, Any, Optional, List
 
 def map_images_to_questions(
     step1_output_path: Path,
-    structured_problem_path: Path, # この引数は現在未使用だが、将来的な拡張のために残す
+    structured_problem_path: Path, # この引数は現在未使用だが、将来的な拡張のために残す / This argument is currently unused but kept for future expansion.
     intermediate_dir: Path,
 ) -> Optional[Path]:
     """
     画像PDFの生データ(step1)に含まれるassociated_textをルールベースで解析し、
     問題(join_key)と画像の対応関係をマッピングする。
+
+    Parses the associated_text in the raw data (Step 1) of image PDFs using a rule-based approach
+    and maps the correspondence between problems (join_key) and images.
     """
     print(f"  [Step 4c] Mapping images from {step1_output_path.name} using rule-based approach...")
 
     # --- 1. 入力ファイルの読み込み ---
+    # --- 1. Load Input Files ---
     try:
         with open(step1_output_path, 'r', encoding='utf-8') as f:
             raw_data_per_page = json.load(f)
@@ -24,9 +28,11 @@ def map_images_to_questions(
         return None
 
     # --- 2. ルールベースのマッピング処理 ---
+    # --- 2. Rule-based Mapping Process ---
     all_image_mappings: Dict[str, List[Dict[str, Any]]] = {}
 
     # 正規表現パターンを修正: 「(A 問題20)」のような、最も信頼できる部分のみを抽出する
+    # Revise regex pattern: Extract only the most reliable part, like "(A 問題20)"
     pattern = re.compile(r"[（(]([A-ZＡ-Ｚ])[\s　]*問題[\s　]*(\d+)[\s　]*[)）]")
 
     for page_data in raw_data_per_page:
@@ -64,8 +70,10 @@ def map_images_to_questions(
                 print(f"    - [Warning] Could not parse join_key from associated_text on page {page_num}: '{associated_text}'")
 
     # --- 3. 項番の付与 ---
+    # --- 3. Assign Item Numbers ---
     for join_key in all_image_mappings:
         # 画像リストをimage_pathでソートして、A, B, C...の順序を安定させる
+        # Sort the image list by image_path to stabilize the A, B, C... order.
         image_list = sorted(all_image_mappings[join_key], key=lambda x: x['image_path'])
         
         for i, image_info in enumerate(image_list):
@@ -74,6 +82,7 @@ def map_images_to_questions(
         all_image_mappings[join_key] = image_list
 
     # --- 4. 出力ファイルの保存 ---
+    # --- 4. Save Output File ---
     pdf_stem = step1_output_path.parent.name
     output_dir = intermediate_dir / pdf_stem
     output_dir.mkdir(exist_ok=True, parents=True)

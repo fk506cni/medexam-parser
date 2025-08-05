@@ -11,6 +11,7 @@ def finalize_output(
 ) -> Path:
     """
     統合済みJSONを最終出力形式に変換し、画像を整理して出力する。
+    Converts the integrated JSON to the final output format and organizes/outputs images.
     """
     print(f"  [Step 6] Finalizing output for {integrated_json_path.name}...")
 
@@ -38,6 +39,7 @@ def finalize_output(
                 img_relative_path = Path(img_relative_path_str)
 
                 # 画像ファイル名から元のPDFのステムを特定 (e.g., tp240424-01a_02)
+                # Identify the original PDF stem from the image filename (e.g., tp240424-01a_02)
                 try:
                     pdf_stem_from_filename = img_relative_path.name.split('_p')[0]
                 except IndexError:
@@ -45,6 +47,7 @@ def finalize_output(
                     continue
 
                 # 中間ディレクトリ内の画像ソースパスを構築
+                # Construct the image source path within the intermediate directory
                 original_image_path = intermediate_dir / pdf_stem_from_filename / img_relative_path
                 
                 if not original_image_path.exists():
@@ -52,11 +55,13 @@ def finalize_output(
                     continue
 
                 # 新しい画像ファイル名を生成 (例: tp240424-01-A-15-A.webp)
+                # Generate new image filename (e.g., tp240424-01-A-15-A.webp)
                 new_image_filename = f"{exam_id}-{problem.get('join_key', 'unknown')}-{image_id}.webp"
                 new_image_path_abs = output_image_dir / new_image_filename
 
                 try:
                     # Pillowで開いてWebPロスレスで保存し直す（品質保証のため）
+                    # Re-save with Pillow as lossless WebP (for quality assurance)
                     img_pil = Image.open(original_image_path)
                     img_pil.save(new_image_path_abs, format="WebP", lossless=True)
                     

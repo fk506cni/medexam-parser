@@ -10,14 +10,15 @@ import time
 from typing import List, Dict, Optional, Any
 
 # .envファイルから環境変数を読み込む
+# Load environment variables from the .env file
 load_dotenv()
 
-# --- LLMとプロンプトのパス設定 ---
+# --- LLMとプロンプトのパス設定 / LLM and Prompt Path Settings ---
 API_KEY = os.getenv("GOOGLE_API_KEY")
 PROMPT_FILE = Path(__file__).parent / "step4_prompt.txt"
 
 def _load_prompt_template() -> str:
-    """プロンプトファイルを読み込む"""
+    """プロンプトファイルを読み込む / Loads the prompt file."""
     try:
         with open(PROMPT_FILE, "r", encoding="utf-8") as f:
             return f.read()
@@ -26,12 +27,16 @@ def _load_prompt_template() -> str:
         raise
 
 # グローバル変数としてプロンプトを読み込む
+# Load the prompt as a global variable
 PROMPT_TEMPLATE = _load_prompt_template()
 
 def _create_join_key(problem_id: str) -> Optional[str]:
     """
     問題IDから解答結合キーを生成する。
     例: "tp240424-01a_01-1" -> "A-1"
+
+    Generates an answer join key from a problem ID.
+    Example: "tp240424-01a_01-1" -> "A-1"
     """
     if not problem_id or not isinstance(problem_id, str):
         return None
@@ -55,10 +60,10 @@ def _create_join_key(problem_id: str) -> Optional[str]:
         return None
 
 def _call_gemini_api(batch_json_str: str, model_name: str) -> Optional[List[Dict]]:
-    """LLMを呼び出し、パースされたJSONを返す"""
+    """LLMを呼び出し、パースされたJSONを返す / Calls the LLM and returns the parsed JSON."""
     try:
         model = genai.GenerativeModel(model_name)
-        # .format() を使わず、単純な置換でプロンプトを組み立てる
+        # .format() を使わず、単純な置換でプロンプトを組み立てる / Assemble the prompt using simple replacement, without .format()
         prompt = PROMPT_TEMPLATE.replace("{problem_batch_json}", batch_json_str)
         response = model.generate_content(prompt)
         
@@ -92,7 +97,7 @@ def structure_problems(
     max_batches: int,
     max_retries: int = 3
 ) -> Optional[Path]:
-    """問題チャンクのテキストを構造化されたJSONに変換する"""
+    """問題チャンクのテキストを構造化されたJSONに変換する / Converts problem chunk text into structured JSON."""
     if not API_KEY:
         print("Error: GOOGLE_API_KEY is not set. Skipping Step 4.")
         return None
@@ -111,7 +116,7 @@ def structure_problems(
 
     if not problem_chunks:
         print(f"Warning: No problem chunks found in {step3_output_path.name}. Skipping Step 4.")
-        # 空のファイルを作成して正常終了とする
+        # 空のファイルを作成して正常終了とする / Create an empty file to indicate successful completion.
         output_path = step_output_dir / "step4_structured_problems.json"
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump([], f)
@@ -125,7 +130,7 @@ def structure_problems(
         batches_to_process = min(total_batches, max_batches)
         print(f"Info: Processing only the first {batches_to_process} of {total_batches} batches due to --max-batches limit.")
 
-    # バッチ処理
+    # バッチ処理 / Batch processing
     for i in range(0, len(problem_chunks), batch_size):
         current_batch_num = i // batch_size
         if max_batches > 0 and current_batch_num >= max_batches:
@@ -149,7 +154,7 @@ def structure_problems(
             time.sleep(rate_limit_wait)
 
         if structured_batch:
-            # 各問題にjoin_keyを追加
+            # 各問題にjoin_keyを追加 / Add join_key to each problem
             for problem in structured_batch:
                 problem_id = problem.get("id")
                 problem["join_key"] = _create_join_key(problem_id)
@@ -159,7 +164,7 @@ def structure_problems(
         else:
             print(f"    ...Failed after {max_retries} retries. Skipping this batch.")
 
-        # 次のAPI呼び出しの前に待機
+        # 次のAPI呼び出しの前に待機 / Wait before the next API call
         if (current_batch_num + 1) < batches_to_process:
             time.sleep(rate_limit_wait)
 

@@ -6,9 +6,11 @@ def create_summary(integrated_json_path: Path, output_summary_path: Path):
     """
     統合済みJSONファイルを読み込み、詳細な統計情報を集計してJSONファイルとして出力する。
 
+    Loads an integrated JSON file, aggregates detailed statistical information, and outputs it as a JSON file.
+
     Args:
-        integrated_json_path (Path): Step 5bで生成された統合済みJSONファイルのパス。
-        output_summary_path (Path): 出力するサマリーJSONファイルのパス。
+        integrated_json_path (Path): Step 5bで生成された統合済みJSONファイルのパス。/ Path to the integrated JSON file generated in Step 5b.
+        output_summary_path (Path): 出力するサマリーJSONファイルのパス。/ Path to the output summary JSON file.
     """
     if not integrated_json_path.exists():
         print(f"Error: Integrated JSON file not found at {integrated_json_path}")
@@ -18,15 +20,19 @@ def create_summary(integrated_json_path: Path, output_summary_path: Path):
         data = json.load(f)
 
     # --- 基本集計 ---
+    # --- Basic Aggregation ---
     total_questions = len(data)
     questions_with_images = sum(1 for item in data if item.get('images'))
     # 総画像数をカウント（imagesがオブジェクトのリストであることを考慮）
+    # Count total images (considering images as a list of objects)
     total_images = sum(len(item.get('images', [])) for item in data)
 
     # --- 問題タイプ別集計 ---
+    # --- Aggregation by Question Type ---
     question_type_counts = Counter(item.get('question_type', 'unknown') for item in data)
 
     # --- 問題グループ別集計 (join_keyのプレフィックスを利用) ---
+    # --- Aggregation by Question Group (using join_key prefix) ---
     group_counts = Counter()
     for item in data:
         join_key = item.get('join_key', 'unknown-')
@@ -34,6 +40,7 @@ def create_summary(integrated_json_path: Path, output_summary_path: Path):
         group_counts[group] += 1
 
     # --- 正解連携エラーの集計 ---
+    # --- Aggregation of Answer Linkage Errors ---
     unmatched_questions = [item['id'] for item in data if 'answer' not in item or item['answer'] is None]
     
     unmatched_answers = []
@@ -44,6 +51,7 @@ def create_summary(integrated_json_path: Path, output_summary_path: Path):
             unmatched_answers = [item.get('join_key', 'unknown') for item in unmatched_data]
 
     # --- サマリー作成 ---
+    # --- Create Summary ---
     summary = {
         "total_questions": total_questions,
         "questions_with_images": questions_with_images,

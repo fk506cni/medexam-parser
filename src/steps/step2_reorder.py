@@ -8,12 +8,16 @@ def reorder_text(step1_output_path: Path, intermediate_dir: Path) -> Optional[Pa
     （y座標優先、次にx座標）に並べ替えてテキストファイルとして保存する。
     シンプルなBBoxベースのソートを行う。
 
+    Extracts text blocks from the raw data of Step 1, reorders them into a natural
+    reading order (y-coordinate first, then x-coordinate), and saves them as a text file.
+    Performs a simple BBox-based sort.
+
     Args:
-        step1_output_path (Path): Step1の出力JSONファイルのパス。
-        intermediate_dir (Path): 中間ファイルを保存する親ディレクトリ。
+        step1_output_path (Path): Step1の出力JSONファイルのパス。/ Path to the output JSON file from Step 1.
+        intermediate_dir (Path): 中間ファイルを保存する親ディレクトリ。/ Parent directory to save intermediate files.
 
     Returns:
-        Path: 生成されたテキストファイルのパス。エラーの場合はNone。
+        Path: 生成されたテキストファイルのパス。エラーの場合はNone。/ The path to the generated text file, or None in case of an error.
     """
     pdf_stem = step1_output_path.parent.name
     step_output_dir = intermediate_dir / pdf_stem
@@ -35,11 +39,13 @@ def reorder_text(step1_output_path: Path, intermediate_dir: Path) -> Optional[Pa
             continue
 
         # テキストブロックをy座標(bbox[1])、次にx座標(bbox[0])でソート
+        # Sort text blocks by y-coordinate (bbox[1]), then by x-coordinate (bbox[0]).
         try:
             sorted_blocks = sorted(text_blocks, key=lambda b: (b["bbox"][1], b["bbox"][0]))
         except (KeyError, IndexError) as e:
             print(f"Warning: Could not sort blocks on page {page_num} due to unexpected block format: {e}")
             # ソートに失敗した場合は、元の順序で処理を試みる
+            # If sorting fails, try to process in the original order.
             sorted_blocks = text_blocks
 
         reordered_page_text = "\n".join([block.get("text", "") for block in sorted_blocks])
@@ -50,12 +56,14 @@ def reorder_text(step1_output_path: Path, intermediate_dir: Path) -> Optional[Pa
         full_text += "\n\n"
 
     # 並べ替えたテキストをファイルに保存
+    # Save the reordered text to a file.
     output_path = step_output_dir / "step2_reordered_text.txt"
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(full_text)
         
     print(f"Successfully reordered text and saved to {output_path}")
     return output_path
+
 
 if __name__ == '__main__':
     print("This script is a module and is meant to be imported.")

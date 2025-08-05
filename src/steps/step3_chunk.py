@@ -8,14 +8,15 @@ import time
 from typing import List, Dict, Optional
 
 # .envファイルから環境変数を読み込む
+# Load environment variables from the .env file
 load_dotenv()
 
-# --- LLMとプロンプトのパス設定 ---
+# --- LLMとプロンプトのパス設定 / LLM and Prompt Path Settings ---
 API_KEY = os.getenv("GOOGLE_API_KEY")
 PROMPT_FILE = Path(__file__).parent / "step3_prompt.txt"
 
 def _load_prompt_template() -> str:
-    """プロンプトファイルを読み込む"""
+    """プロンプトファイルを読み込む / Loads the prompt file."""
     try:
         with open(PROMPT_FILE, "r", encoding="utf-8") as f:
             return f.read()
@@ -26,7 +27,7 @@ def _load_prompt_template() -> str:
 PROMPT_TEMPLATE = _load_prompt_template()
 
 def _create_text_chunks(text: str, chunk_size: int, overlap: int) -> List[str]:
-    """テキストを指定されたサイズとオーバーラップで分割する"""
+    """テキストを指定されたサイズとオーバーラップで分割する / Splits text into chunks of specified size and overlap."""
     if len(text) <= chunk_size:
         return [text]
     
@@ -39,7 +40,7 @@ def _create_text_chunks(text: str, chunk_size: int, overlap: int) -> List[str]:
     return chunks
 
 def _call_gemini_api(chunk_text: str, model_name: str, debug: bool = False) -> Optional[List[Dict]]:
-    """LLMを呼び出し、パースされたJSONを返す"""
+    """LLMを呼び出し、パースされたJSONを返す / Calls the LLM and returns the parsed JSON."""
     try:
         model = genai.GenerativeModel(model_name)
         prompt = PROMPT_TEMPLATE.format(text_content=chunk_text)
@@ -58,6 +59,7 @@ def _call_gemini_api(chunk_text: str, model_name: str, debug: bool = False) -> O
             print("-------------------------------------------")
 
         # ```json ... ``` で囲まれていても、いなくてもJSON配列を抽出する正規表現
+        # Regex to extract JSON array, whether or not it's enclosed in ```json ... ```
         match = re.search(r"```json\s*(\[.*\])\s*```|(\[.*\])", raw_response_text, re.DOTALL)
         
         if not match:
@@ -65,6 +67,7 @@ def _call_gemini_api(chunk_text: str, model_name: str, debug: bool = False) -> O
             return []
 
         # マッチした部分（キャプチャグループ1または2）からJSONテキストを取得
+        # Get JSON text from the matched part (capture group 1 or 2)
         json_text = match.group(1) or match.group(2)
 
         if not json_text:
@@ -90,7 +93,10 @@ def chunk_text_by_problem(
     max_retries: int = 3,
     debug: bool = False
 ) -> Optional[Path]:
-    """LLMを使ってテキストを問題ごとにチャンク化し、JSONファイルとして保存する"""
+    """
+    LLMを使ってテキストを問題ごとにチャンク化し、JSONファイルとして保存する。
+    Chunks text by problem using an LLM and saves it as a JSON file.
+    """
     if not API_KEY:
         print("Error: GOOGLE_API_KEY is not set. Skipping Step 3.")
         return None
@@ -132,6 +138,7 @@ def chunk_text_by_problem(
                     print(f"Warning: Invalid item in LLM response: {problem}")
             
             # 次のAPI呼び出しの前に指定された時間だけ待機
+            # Wait for the specified time before the next API call
             if i < len(text_chunks) - 1:
                 time.sleep(rate_limit_wait)
 

@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional
 def format_answer_info(answer_list: List[str]) -> Dict[str, Any]:
     """
     解答リストを、問題JSONに統合するための辞書形式に変換する。
+    Converts a list of answers into a dictionary format for integration into the problem JSON.
     """
     if not answer_list:
         return {}
@@ -27,6 +28,7 @@ def integrate_answers(
 ) -> Optional[Path]:
     """
     構造化された問題データに、パースされた正解情報と画像マッピング情報を統合する。
+    Integrates parsed answer information and image mapping information into structured problem data.
     """
     print(f"  [Step 5b] Integrating data for {structured_problems_path.name}")
 
@@ -38,6 +40,7 @@ def integrate_answers(
         return None
 
     # --- 正解キーの読み込み ---
+    # --- Load Answer Key ---
     answer_key: Dict[str, List[str]] = {}
     if parsed_answer_key_path and parsed_answer_key_path.exists():
         try:
@@ -50,6 +53,7 @@ def integrate_answers(
         print("  [Step 5b] Warning: Answer key file not provided or not found. Proceeding without answer data.")
 
     # --- 画像マッピングの読み込み ---
+    # --- Load Image Mappings ---
     image_mappings: Dict[str, List[Dict[str, Any]]] = {}
     for mapping_path in image_mapping_paths:
         if mapping_path and mapping_path.exists():
@@ -58,7 +62,7 @@ def integrate_answers(
                     data = json.load(f)
                     for key, value in data.items():
                         if key in image_mappings:
-                            # 重複を避けながら結合
+                            # 重複を避けながら結合 / Combine while avoiding duplicates
                             existing_paths = {img['image_path'] for img in image_mappings[key]}
                             for img_info in value:
                                 if img_info['image_path'] not in existing_paths:
@@ -70,6 +74,7 @@ def integrate_answers(
                 print(f"  [Step 5b] Warning: Could not read or parse image mapping file {mapping_path.name}: {e}")
 
     # --- 問題データへの統合処理 ---
+    # --- Integration into Problem Data ---
     integrated_answers_count = 0
     integrated_images_count = 0
     unmatched_problems_count = 0
@@ -80,21 +85,21 @@ def integrate_answers(
             unmatched_problems_count += 1
             continue
 
-        # 正解情報の統合
+        # 正解情報の統合 / Integrate answer information
         answer_list = answer_key.get(join_key)
         if answer_list:
             answer_info = format_answer_info(answer_list)
             problem["answer"] = answer_info
             integrated_answers_count += 1
         
-        # 画像情報の統合
+        # 画像情報の統合 / Integrate image information
         image_info_list = image_mappings.get(join_key)
         if image_info_list:
-            # 既存のimagesリストを初期化または取得
+            # 既存のimagesリストを初期化または取得 / Initialize or get existing images list
             if "images" not in problem or not isinstance(problem["images"], list):
                 problem["images"] = []
             
-            # 新しい画像情報を追加（重複を避ける）
+            # 新しい画像情報を追加（重複を避ける） / Add new image information (avoid duplicates)
             existing_paths = {img.get('path') for img in problem["images"] if isinstance(img, dict)}
             for new_img_info in image_info_list:
                 if new_img_info.get('image_path') not in existing_paths:
@@ -103,7 +108,7 @@ def integrate_answers(
                         "path": new_img_info.get('image_path')
                     })
             
-            # パスでソートして順序を安定させる
+            # パスでソートして順序を安定させる / Sort by path to stabilize order
             problem["images"].sort(key=lambda x: x.get('path', ''))
             integrated_images_count += 1
 
@@ -112,12 +117,13 @@ def integrate_answers(
     if unmatched_problems_count > 0:
         print(f"  [Step 5b] Warning: {unmatched_problems_count} problems without a join_key were skipped.")
 
-    # 出力パスを生成
+    # 出力パスを生成 / Generate output path
     exam_id_part = structured_problems_path.parent.name
     output_dir = intermediate_dir / exam_id_part
     output_dir.mkdir(exist_ok=True, parents=True)
 
     # --- どの解答キーが使われなかったかを特定 ---
+    # --- Identify which answer keys were not used ---
     used_join_keys = {p.get("join_key") for p in problems if p.get("join_key")}
     unmatched_answers = [
         {"join_key": k, "answer": v} for k, v in answer_key.items() if k not in used_join_keys

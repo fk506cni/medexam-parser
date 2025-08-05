@@ -10,7 +10,8 @@ from PIL import Image
 import re
 
 def get_exam_id_from_stem(pdf_stem: str) -> str:
-    """ファイル名から共通の試験ID (例: tp240424-01) を抽出する"""
+    """ファイル名から共通の試験ID (例: tp240424-01) を抽出する
+    Extracts a common exam ID (e.g., tp240424-01) from a filename stem."""
     # "tp240424-01a_01" -> "tp240424-01"
     match = re.match(r"(tp\d{6}-\d{2})", pdf_stem)
     if match:
@@ -26,7 +27,7 @@ PROMPT_TEMPLATE_PATH = Path(__file__).parent / "step7_prompt.txt"
 
 # --- LLM API Call ---
 def call_llm_api(model, prompt, images, retry, rate_limit_wait):
-    """Calls the LLM API with retry logic."""
+    """LLM APIをリトライロジック付きで呼び出す。/ Calls the LLM API with retry logic."""
     for i in range(retry):
         try:
             contents = [prompt] + images
@@ -39,14 +40,14 @@ def call_llm_api(model, prompt, images, retry, rate_limit_wait):
     return None
 
 def clean_question_for_prompt(question_data):
-    """Removes answer key from question data to create a clean prompt."""
+    """プロンプトをクリーンにするため、問題データから解答キーを削除する。/ Removes answer key from question data to create a clean prompt."""
     if "answer" in question_data:
         del question_data["answer"]
     return question_data
 
 def run(args):
-    """Main function to solve problems using LLM."""
-    # --- Initialization ---
+    """LLMを使って問題を解くメイン関数。/ Main function to solve problems using LLM."""
+    # --- 初期化 / Initialization ---
     genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
     model = genai.GenerativeModel(args.model_name)
     
@@ -60,17 +61,18 @@ def run(args):
         print(f"Error: Final JSON directory not found at '{final_json_dir}'")
         return
 
-    # --- File Processing ---
+    # --- ファイル処理 / File Processing ---
     files_to_process = []
     if args.files:
         # main.pyの--files引数はPDFファイル名。そこからexam_idを抽出し、対応するJSONファイル名を作成する。
+        # The --files argument in main.py is a PDF filename. Extract the exam_id from it and create the corresponding JSON filename.
         exam_ids = {get_exam_id_from_stem(Path(f).stem) for f in args.files}
         files_to_process = [final_json_dir / f"{eid}.json" for eid in exam_ids]
     else:
-        # 指定がない場合はoutput/json内のすべてのJSONを対象とする
+        # 指定がない場合はoutput/json内のすべてのJSONを対象とする / If not specified, target all JSONs in output/json.
         files_to_process = list(final_json_dir.glob("*.json"))
 
-    # 存在しないファイルをリストから除去
+    # 存在しないファイルをリストから除去 / Remove non-existent files from the list
     files_to_process = [f for f in files_to_process if f.exists()]
 
     if not files_to_process:
@@ -79,7 +81,7 @@ def run(args):
 
     prompt_template = PROMPT_TEMPLATE_PATH.read_text(encoding="utf-8")
 
-    # --- Main Loop ---
+    # --- メインループ / Main Loop ---
     for file_path in files_to_process:
         exam_id = file_path.stem
         output_file = output_dir / f"{exam_id}.jsonl"
@@ -141,7 +143,7 @@ def run(args):
                 else:
                     llm_answer = {"error": "No response from LLM after retries."}
 
-                # --- Save Result ---
+                # --- 結果を保存 / Save Result ---
                 result_entry = {
                     "exam_id": exam_id,
                     "question_id": question_id,
@@ -157,3 +159,4 @@ def run(args):
                 time.sleep(args.rate_limit_wait)
 
         print(f"Finished processing {file_path.name}. Results saved to {output_file}")
+

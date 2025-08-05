@@ -6,13 +6,14 @@ import os
 import google.generativeai as genai
 
 # LLMクライアントのセットアップ
+# Set up LLM client
 api_key = os.getenv("GOOGLE_API_KEY")
 if not api_key:
     raise ValueError("GOOGLE_API_KEY environment variable not set.")
 genai.configure(api_key=api_key)
 
 def call_llm(prompt: str, model_name: str):
-    """LLMを呼び出して結果を返す"""
+    """LLMを呼び出して結果を返す / Calls the LLM and returns the result."""
     try:
         model = genai.GenerativeModel(model_name)
         response = model.generate_content(prompt)
@@ -22,11 +23,14 @@ def call_llm(prompt: str, model_name: str):
         return None
 
 def extract_json_from_llm_response(response_text: str):
-    """LLMの応答からJSON部分を抽出する"""
-    match = re.search(r'```json\n(.*?)\n```', response_text, re.DOTALL)
+    """LLMの応答からJSON部分を抽出する / Extracts the JSON part from the LLM's response."""
+    match = re.search(r'```json
+(.*?)
+```', response_text, re.DOTALL)
     if match:
         return match.group(1)
-    return response_text # JSONが直接返された場合
+    return response_text # JSONが直接返された場合 / If JSON is returned directly
+
 
 def parse_answer_key(
     answer_key_extraction_path: Path, 
@@ -44,7 +48,7 @@ def parse_answer_key(
         print(f"  [Step 5a] Error reading or parsing file: {e}")
         return None
 
-    # プロンプトを読み込む
+    # プロンプトを読み込む / Load the prompt
     prompt_template_path = Path(__file__).parent / "step5a_prompt.txt"
     with open(prompt_template_path, 'r', encoding='utf-8') as f:
         prompt_template = f.read()
@@ -82,7 +86,7 @@ def parse_answer_key(
         print("  [Step 5a] Could not parse any answers from the document.")
         return None
 
-    # 出力パスは、入力ファイルと同じディレクトリに保存する
+    # 出力パスは、入力ファイルと同じディレクトリに保存する / Output path is saved in the same directory as the input file.
     output_dir = answer_key_extraction_path.parent
     output_path = output_dir / "step5a_parsed_answer_key.json"
 

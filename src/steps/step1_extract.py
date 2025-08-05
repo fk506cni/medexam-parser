@@ -6,12 +6,14 @@ import io
 import math
 
 def calculate_centroid(bbox):
-    """Calculate the centroid (center point) of a bounding box."""
+    """バウンディングボックスの重心（中心点）を計算する。
+    Calculate the centroid (center point) of a bounding box."""
     x0, y0, x1, y1 = bbox
     return (x0 + x1) / 2, (y0 + y1) / 2
 
 def calculate_distance(point1, point2):
-    """Calculate the Euclidean distance between two points."""
+    """2点間のユークリッド距離を計算する。
+    Calculate the Euclidean distance between two points."""
     return math.sqrt((point1[0] - point2[0])**2 + (point1[1] - point2[1])**2)
 
 def extract_raw_data(pdf_path: Path, intermediate_dir: Path, debug: bool = False):
@@ -19,6 +21,10 @@ def extract_raw_data(pdf_path: Path, intermediate_dir: Path, debug: bool = False
     PDFからテキスト、画像、およびそれらの座標情報を抽出し、中間ファイルとして保存する。
     ファイル名に 'seitou' が含まれる場合は、ページごとにプレーンテキストを抽出する。
     画像ブロックに最も近いテキストブロックを関連付ける。
+
+    Extracts text, images, and their coordinate information from a PDF and saves them as an intermediate file.
+    If the filename contains 'seitou', it extracts plain text for each page.
+    Associates the nearest text block with each image block.
     """
     try:
         doc = fitz.open(pdf_path)
@@ -41,13 +47,16 @@ def extract_raw_data(pdf_path: Path, intermediate_dir: Path, debug: bool = False
         
         if "seitou" in pdf_path.name:
             # 正答値表はページごとのプレーンテキスト
+            # For the answer key table, extract plain text per page.
             page_text = page.get_text("text")
             page_data = {"page_number": page_num + 1, "text": page_text}
         else:
             # 通常の問題PDFは詳細な構造
+            # For regular question PDFs, use a detailed structure.
             raw_text_blocks = page.get_text("dict").get("blocks", [])
             
             # テキストブロックを整形し、画像ブロックの 'image' キーを削除
+            # Format text blocks and remove the 'image' key from image blocks.
             text_blocks_on_page = []
             for block in raw_text_blocks:
                 if block["type"] == 0: # type 0 is text block
@@ -64,11 +73,12 @@ def extract_raw_data(pdf_path: Path, intermediate_dir: Path, debug: bool = False
 
             page_data = {
                 "page_number": page_num + 1,
-                "text_blocks": text_blocks_on_page, # 整形したテキストブロック
+                "text_blocks": text_blocks_on_page, # 整形したテキストブロック / Formatted text blocks
                 "images": []
             }
             
             # 画像保存用のディレクトリを作成
+            # Create a directory for saving images.
             image_output_dir = step_output_dir / "images"
             image_output_dir.mkdir(exist_ok=True)
 
@@ -102,6 +112,7 @@ def extract_raw_data(pdf_path: Path, intermediate_dir: Path, debug: bool = False
                             print(f"  [Step 1 Debug] Page {page_num + 1}, Image {img_index + 1}: Image saved to {image_path_abs.name}")
 
                         # --- 画像に最も近いテキストを関連付けるロジック ---
+                        # --- Logic to associate the nearest text with the image ---
                         if debug:
                             print(f"  [Step 1 Debug] Page {page_num + 1}, Image {img_index + 1}: Finding associated text...")
                         image_centroid = calculate_centroid(bbox)
@@ -110,6 +121,7 @@ def extract_raw_data(pdf_path: Path, intermediate_dir: Path, debug: bool = False
 
                         for text_block in text_blocks_on_page:
                             # "DK"で始まるテキストは関連付けの候補から除外
+                            # Exclude text starting with "DK" from association candidates.
                             if text_block["text"].strip().startswith("DK"):
                                 continue
                             text_centroid = calculate_centroid(text_block["bbox"])
