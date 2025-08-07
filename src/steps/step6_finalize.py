@@ -27,10 +27,23 @@ def finalize_output(
 
     exam_id = integrated_json_path.parent.name # e.g., tp240424-01
 
-    for problem in problems:
-        if "images" in problem and isinstance(problem.get("images"), list) and problem["images"]:
+    final_problems = []
+    for problem_data in problems:
+        # This script currently only handles 'single' format.
+        # The combined list of single and consecutive problems will be created in step5b in the future.
+        # このスクリプトは現在 'single' 形式のみを扱う。
+        # 将来的に、単一問題と連続問題の結合リストはstep5bで作成される。
+        new_problem_structure = {
+            "id": problem_data.get("id"),
+            "problem_format": "single",
+            "problem": problem_data
+        }
+
+        problem_obj = new_problem_structure["problem"]
+
+        if "images" in problem_obj and isinstance(problem_obj.get("images"), list) and problem_obj["images"]:
             new_image_info_list = []
-            for img_info in problem["images"]:
+            for img_info in problem_obj["images"]:
                 if not isinstance(img_info, dict) or 'path' not in img_info or 'id' not in img_info:
                     continue
 
@@ -38,47 +51,41 @@ def finalize_output(
                 image_id = img_info['id']
                 img_relative_path = Path(img_relative_path_str)
 
-                # 画像ファイル名から元のPDFのステムを特定 (e.g., tp240424-01a_02)
-                # Identify the original PDF stem from the image filename (e.g., tp240424-01a_02)
                 try:
                     pdf_stem_from_filename = img_relative_path.name.split('_p')[0]
                 except IndexError:
                     print(f"  [Step 6] Warning: Could not determine source PDF stem from image filename: {img_relative_path.name}. Skipping.")
                     continue
 
-                # 中間ディレクトリ内の画像ソースパスを構築
-                # Construct the image source path within the intermediate directory
                 original_image_path = intermediate_dir / pdf_stem_from_filename / img_relative_path
                 
                 if not original_image_path.exists():
                     print(f"  [Step 6] Warning: Image file not found: {original_image_path}. Skipping.")
                     continue
 
-                # 新しい画像ファイル名を生成 (例: tp240424-01-A-15-A.webp)
-                # Generate new image filename (e.g., tp240424-01-A-15-A.webp)
-                new_image_filename = f"{exam_id}-{problem.get('join_key', 'unknown')}-{image_id}.webp"
+                new_image_filename = f"{exam_id}-{problem_obj.get('join_key', 'unknown')}-{image_id}.webp"
                 new_image_path_abs = output_image_dir / new_image_filename
 
                 try:
-                    # Pillowで開いてWebPロスレスで保存し直す（品質保証のため）
-                    # Re-save with Pillow as lossless WebP (for quality assurance)
                     img_pil = Image.open(original_image_path)
                     img_pil.save(new_image_path_abs, format="WebP", lossless=True)
                     
                     new_image_info_list.append({
                         "id": image_id,
-                        "path": str(new_image_path_abs.relative_to(output_image_dir))
+                        "path": new_image_filename
                     })
                 except Exception as e:
                     print(f"  [Step 6] Error processing image {original_image_path}: {e}. Skipping.")
                     continue
             
-            problem["images"] = new_image_info_list
+            problem_obj["images"] = new_image_info_list
+        
+        final_problems.append(new_problem_structure)
 
     final_json_output_path = output_json_dir / f"{exam_id}.json"
     try:
         with open(final_json_output_path, 'w', encoding='utf-8') as f:
-            json.dump(problems, f, ensure_ascii=False, indent=2)
+            json.dump(final_problems, f, ensure_ascii=False, indent=2)
         print(f"  [Step 6] Completed. Final JSON output: {final_json_output_path}")
     except IOError as e:
         print(f"  [Step 6] Error writing final JSON output: {e}")

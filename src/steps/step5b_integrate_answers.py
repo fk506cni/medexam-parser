@@ -1,15 +1,14 @@
+
 from pathlib import Path
 import json
 from typing import List, Dict, Any, Optional
 
 def format_answer_info(answer_list: List[str]) -> Dict[str, Any]:
     """
-    解答リストを、問題JSONに統合するための辞書形式に変換する。
     Converts a list of answers into a dictionary format for integration into the problem JSON.
     """
     if not answer_list:
         return {}
-
     first_answer = answer_list[0]
     try:
         float_val = float(first_answer)
@@ -20,131 +19,156 @@ def format_answer_info(answer_list: List[str]) -> Dict[str, Any]:
         formatted_choices = [str(ans).lower() for ans in answer_list]
         return {"choices": formatted_choices}
 
+def _integrate_data_into_problem(problem: Dict[str, Any], answer_key: Dict[str, List[str]], image_mappings: Dict[str, List[Dict[str, Any]]]):
+    """
+    Integrates answer and image data into a single problem dictionary (or a sub-question).
+    """
+    join_key = problem.get("join_key")
+    if not join_key:
+        return
+
+    # Integrate answer information
+    if answer_key and join_key in answer_key:
+        problem["answer"] = format_answer_info(answer_key[join_key])
+
+    # Integrate image information
+    if image_mappings and join_key in image_mappings:
+        if "images" not in problem or not isinstance(problem.get("images"), list):
+            problem["images"] = []
+        
+        existing_paths = {img.get('path') for img in problem["images"] if isinstance(img, dict)}
+        for new_img_info in image_mappings[join_key]:
+            img_path = new_img_info.get('image_path') 
+            if img_path not in existing_paths:
+                problem["images"].append({
+                    "id": new_img_info.get('image_id'),
+                    "path": img_path
+                })
+        problem["images"].sort(key=lambda x: x.get('path', ''))
+
 def integrate_answers(
-    structured_problems_path: Path, 
-    parsed_answer_key_path: Optional[Path], 
+    exam_id: str,
+    single_problem_paths: List[Path],
+    consecutive_problem_paths: List[Path],
+    parsed_answer_key_path: Optional[Path],
     image_mapping_paths: List[Path],
     intermediate_dir: Path
 ) -> Optional[Path]:
     """
-    構造化された問題データに、パースされた正解情報と画像マッピング情報を統合する。
-    Integrates parsed answer information and image mapping information into structured problem data.
+    Integrates all structured data (single, consecutive, answers, images) for a given exam ID.
     """
-    print(f"  [Step 5b] Integrating data for {structured_problems_path.name}")
+    print(f"  [Step 5b] Starting integration for exam ID: {exam_id}")
+    # --- Load all problem data with de-duplication ---
+    print("  [Step 5b] Identifying question numbers from consecutive blocks...")
+    consecutive_q_numbers = set()
+    consecutive_problems_data = []
+    for path in consecutive_problem_paths:
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    consecutive_problems_data.extend(data)
+                    for problem_block in data:
+                        for sub_q in problem_block.get("sub_questions", []):
+                            if "problem_number" in sub_q:
+                                consecutive_q_numbers.add(sub_q["problem_number"])
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            print(f"  [Step 5b] Warning: Could not read or parse consecutive file {path.name}: {e}")
+    
+    print(f"  [Step 5b] Found {len(consecutive_q_numbers)} questions within consecutive blocks: {sorted(list(consecutive_q_numbers))}")
 
-    try:
-        with open(structured_problems_path, 'r', encoding='utf-8') as f:
-            problems: List[Dict[str, Any]] = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        print(f"  [Step 5b] Error reading or parsing structured problems file: {e}")
+    all_problems = list(consecutive_problems_data) # Start with all consecutive problems
+
+    print("  [Step 5b] Loading single problems and filtering out duplicates...")
+    for path in single_problem_paths:
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    for problem in data:
+                        problem_num = problem.get("problem_number")
+                        if problem_num is not None and problem_num not in consecutive_q_numbers:
+                            all_problems.append({
+                                "id": problem.get("id"),
+                                "problem_format": "single",
+                                "problem": problem
+                            })
+                        # else: # Optional: for debugging
+                        #     print(f"  [Step 5b] Skipping single problem {problem_num} as it is part of a consecutive block.")
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            print(f"  [Step 5b] Warning: Could not read or parse single problem file {path.name}: {e}")
+
+    if not all_problems:
+        print(f"  [Step 5b] No problems found for exam {exam_id} after filtering. Aborting.")
         return None
 
-    # --- 正解キーの読み込み ---
     # --- Load Answer Key ---
-    answer_key: Dict[str, List[str]] = {}
+    answer_key = {}
     if parsed_answer_key_path and parsed_answer_key_path.exists():
         try:
             with open(parsed_answer_key_path, 'r', encoding='utf-8') as f:
                 answer_key = json.load(f)
-            print(f"  [Step 5b] Loaded answer key from {parsed_answer_key_path.name}")
         except (FileNotFoundError, json.JSONDecodeError) as e:
             print(f"  [Step 5b] Warning: Could not read or parse answer key file: {e}")
-    else:
-        print("  [Step 5b] Warning: Answer key file not provided or not found. Proceeding without answer data.")
 
-    # --- 画像マッピングの読み込み ---
-    # --- Load Image Mappings ---
-    image_mappings: Dict[str, List[Dict[str, Any]]] = {}
-    for mapping_path in image_mapping_paths:
-        if mapping_path and mapping_path.exists():
+    # --- Load and Merge Image Mappings ---
+    image_mappings = {}
+    for path in image_mapping_paths:
+        if path and path.exists():
             try:
-                with open(mapping_path, 'r', encoding='utf-8') as f:
+                with open(path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     for key, value in data.items():
-                        if key in image_mappings:
-                            # 重複を避けながら結合 / Combine while avoiding duplicates
-                            existing_paths = {img['image_path'] for img in image_mappings[key]}
-                            for img_info in value:
-                                if img_info['image_path'] not in existing_paths:
-                                    image_mappings[key].append(img_info)
-                        else:
-                            image_mappings[key] = value
-                print(f"  [Step 5b] Loaded and merged image mappings from {mapping_path.name}")
+                        if key not in image_mappings:
+                            image_mappings[key] = []
+                        image_mappings[key].extend(value)
             except (FileNotFoundError, json.JSONDecodeError) as e:
-                print(f"  [Step 5b] Warning: Could not read or parse image mapping file {mapping_path.name}: {e}")
+                print(f"  [Step 5b] Warning: Could not read or parse image mapping file {path.name}: {e}")
 
-    # --- 問題データへの統合処理 ---
-    # --- Integration into Problem Data ---
-    integrated_answers_count = 0
-    integrated_images_count = 0
-    unmatched_problems_count = 0
-
-    for problem in problems:
-        join_key = problem.get("join_key")
-        if not join_key:
-            unmatched_problems_count += 1
-            continue
-
-        # 正解情報の統合 / Integrate answer information
-        answer_list = answer_key.get(join_key)
-        if answer_list:
-            answer_info = format_answer_info(answer_list)
-            problem["answer"] = answer_info
-            integrated_answers_count += 1
+    # --- Integrate data into each problem ---
+    used_join_keys = set()
+    for problem_obj in all_problems:
+        if problem_obj.get("problem_format") == "single":
+            problem_core = problem_obj.get("problem", {})
+            _integrate_data_into_problem(problem_core, answer_key, image_mappings)
+            if problem_core.get("join_key"): used_join_keys.add(problem_core.get("join_key"))
         
-        # 画像情報の統合 / Integrate image information
-        image_info_list = image_mappings.get(join_key)
-        if image_info_list:
-            # 既存のimagesリストを初期化または取得 / Initialize or get existing images list
-            if "images" not in problem or not isinstance(problem["images"], list):
-                problem["images"] = []
-            
-            # 新しい画像情報を追加（重複を避ける） / Add new image information (avoid duplicates)
-            existing_paths = {img.get('path') for img in problem["images"] if isinstance(img, dict)}
-            for new_img_info in image_info_list:
-                if new_img_info.get('image_path') not in existing_paths:
-                    problem["images"].append({
-                        "id": new_img_info.get('image_id'),
-                        "path": new_img_info.get('image_path')
-                    })
-            
-            # パスでソートして順序を安定させる / Sort by path to stabilize order
-            problem["images"].sort(key=lambda x: x.get('path', ''))
-            integrated_images_count += 1
+        elif problem_obj.get("problem_format") == "consecutive":
+            case_presentation = problem_obj.get("case_presentation", {})
+            _integrate_data_into_problem(case_presentation, {}, image_mappings)
+            if problem_obj.get("join_key"): used_join_keys.add(problem_obj.get("join_key"))
 
-    print(f"  [Step 5b] Integrated answers for {integrated_answers_count} problems.")
-    print(f"  [Step 5b] Integrated images for {integrated_images_count} problems.")
-    if unmatched_problems_count > 0:
-        print(f"  [Step 5b] Warning: {unmatched_problems_count} problems without a join_key were skipped.")
+            for sub_q in problem_obj.get("sub_questions", []):
+                _integrate_data_into_problem(sub_q, answer_key, image_mappings)
+                if sub_q.get("join_key"): used_join_keys.add(sub_q.get("join_key"))
 
-    # 出力パスを生成 / Generate output path
-    exam_id_part = structured_problems_path.parent.name
-    output_dir = intermediate_dir / exam_id_part
-    output_dir.mkdir(exist_ok=True, parents=True)
-
-    # --- どの解答キーが使われなかったかを特定 ---
-    # --- Identify which answer keys were not used ---
-    used_join_keys = {p.get("join_key") for p in problems if p.get("join_key")}
-    unmatched_answers = [
-        {"join_key": k, "answer": v} for k, v in answer_key.items() if k not in used_join_keys
-    ]
-    if unmatched_answers:
-        print(f"  [Step 5b] Warning: {len(unmatched_answers)} answer keys were not matched to any problem.")
-        unmatched_answers_path = output_dir / "step5b_unmatched_answers.json"
-        try:
-            with open(unmatched_answers_path, 'w', encoding='utf-8') as f:
-                json.dump(unmatched_answers, f, ensure_ascii=False, indent=2)
-            print(f"  [Step 5b] Saved unmatched answer keys to: {unmatched_answers_path}")
-        except IOError as e:
-            print(f"  [Step 5b] Error writing unmatched answers file: {e}")
-
-    output_path = output_dir / "step5b_integrated_answers.json"
+    # --- Sort problems by the first problem number ---
+    print(f"  [Step 5b] Sorting {len(all_problems)} problems by problem number.")
+    def get_sort_key(problem_obj):
+        if problem_obj.get("problem_format") == "single":
+            return problem_obj.get("problem", {}).get("problem_number", float('inf'))
+        elif problem_obj.get("problem_format") == "consecutive":
+            sub_qs = problem_obj.get("sub_questions", [])
+            if sub_qs:
+                return sub_qs[0].get("problem_number", float('inf'))
+        return float('inf') # Fallback for unexpected formats
     
-    try:
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(problems, f, ensure_ascii=False, indent=2)
-    except IOError as e:
-        print(f"  [Step 5b] Error writing output file: {e}")
-        return None
-        
+    all_problems.sort(key=get_sort_key)
+
+    # --- Unmatched Answer Key Check ---
+    unmatched_answers = {k: v for k, v in answer_key.items() if k not in used_join_keys}
+    if unmatched_answers:
+        print(f"  [Step 5b] Warning: {len(unmatched_answers)} answer keys were not matched.")
+        unmatched_path = intermediate_dir / exam_id / "step5b_unmatched_answers.json"
+        unmatched_path.parent.mkdir(exist_ok=True, parents=True)
+        with open(unmatched_path, 'w', encoding='utf-8') as f:
+            json.dump(unmatched_answers, f, ensure_ascii=False, indent=2)
+
+    # --- Save Final Integrated File ---
+    output_path = intermediate_dir / exam_id / "step5b_integrated.json"
+    output_path.parent.mkdir(exist_ok=True, parents=True)
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(all_problems, f, ensure_ascii=False, indent=2)
+
+    print(f"  [Step 5b] Integration complete for {exam_id}. Output: {output_path}")
     return output_path

@@ -75,9 +75,9 @@ medexam-parser takes the National Medical Examination question PDFs for a specif
 
 ## **処理フロー / Processing Flow**
 
-データ生成は以下のフローで行われます。Step 4c（画像マッピング）はルールベースで実行され、問題の分割（Step 3）、構造化（Step 4）、正答値表の解析（Step 5a）はLLMを活用します。
+データ生成は以下のフローで行われます。Step 3b, 4cはルールベースで実行され、問題の分割（Step 3）、構造化（Step 4）、正答値表の解析（Step 5a）はLLMを活用します。
 
-Data generation follows the flow below. Step 4c (Image Mapping) is executed based on rules, while problem splitting (Step 3), structuring (Step 4), and answer key parsing (Step 5a) utilize an LLM.
+Data generation follows the flow below. Steps 3b and 4c are executed based on rules, while problem splitting (Step 3), structuring (Step 4), and answer key parsing (Step 5a) utilize an LLM.
 
 ```mermaid
 graph TD
@@ -85,7 +85,9 @@ graph TD
     B --> C{"Step 1: Raw Data Extraction"};
     C --> D{"Step 2: Text Reordering"};
     D --> E{"Step 3: Problem Chunking (LLM)"};
+    D --> E_CONSECUTIVE{"Step 3b: Consecutive Problem Chunking (Rule-based)"};
     E --> F{"Step 4: Structuring (LLM)"};
+    E_CONSECUTIVE --> F_CONSECUTIVE{"Step 4b: Consecutive Structuring (LLM)"};
 
     subgraph "Image PDF Processing"
         direction LR
@@ -104,6 +106,7 @@ graph TD
     C_ANS --> J_A("Step 5a: Answer Key Parsing (LLM)");
 
     F --> J_B("Step 5b: Integrate Answers & Images");
+    F_CONSECUTIVE --> J_B;
     G --> J_B;
     J_A --> J_B;
 
@@ -121,13 +124,15 @@ graph TD
 
 *   [x] **Step 1: Raw Extraction (生データ抽出)**: PDFからテキスト、画像、およびそれらの座標情報を抽出し、中間ファイルとして保存する。画像はWebP形式でロスレス圧縮して保存される。**画像ブロックには、ページ内で最も近いテキストブロックの内容 (`associated_text`) を関連付けて保存する。** / Extracts text, images, and their coordinate information from PDFs and saves them as intermediate files. Images are saved in lossless WebP format. **Associates the content of the nearest text block (`associated_text`) with each image block.**
 *   [x] **Step 2: Text Reordering (テキスト順序再構成)**: 2段組レイアウトを解析し、テキストを正しい順序に並べ替える。/ Analyzes two-column layouts and reorders the text into the correct sequence.
-*   [x] **Step 3: Problem Chunking (問題チャンク分割)**: LLMを利用して、テキストを問題ごとに分割する。/ Uses an LLM to split the text into individual problem chunks.
+*   [x] **Step 3: Problem Chunking (問題チャンク分割)**: LLMを利用して、テキストを**一問一答形式の問題**ごとに分割する。/ Uses an LLM to split the text into individual **single-answer question** chunks.
+*   [ ] **(新規/New) Step 3b: Consecutive Problem Chunking (連続問題チャンク分割)**: **ルールベース**で、症例提示の後に複数の問題が続く「連続問題」のブロックを抽出する。/ **Rule-based** extraction of "consecutive question" blocks, where multiple questions follow a single case presentation.
 *   [x] **Step 4: Structure Parsing (構造化)**: LLMを利用し、各問題チャンクを問題文、選択肢などを持つ構造化JSONに変換する。/ Uses an LLM to convert each problem chunk into a structured JSON with fields for the question text, choices, etc.
+*   [ ] **(計画/Planned) Step 4b: Consecutive Structure Parsing (連続問題の構造化)**: LLMを利用し、Step 3bで抽出した連続問題のチャンクを、症例提示文と各設問の構造化JSONに変換する。/ Uses an LLM to convert the consecutive question chunks from Step 3b into a structured JSON containing the case presentation and individual sub-questions.
 *   [x] **Step 4c: Image Mapping (画像マッピング)**: 別冊画像PDFから抽出された`associated_text`を利用し、**ルールベースで**問題（`join_key`）と画像ファイル名の対応関係をマッピングする。/ Uses `associated_text` extracted from the separate image PDF to map question (`join_key`) to image filenames **based on rules**.
 *   [x] **Step 5a: Answer Key Parsing (正答値表解析)**: LLMを利用し、正答値表PDFから問題番号と正解のペアを抽出する。/ Uses an LLM to extract pairs of question numbers and correct answers from the answer key PDF.
-*   [x] **Step 5b: Integration (正解・画像情報統合)**: Step 4, 4c, 5a の結果を統合し、問題に正解と画像情報（画像IDとパス）を付与する。/ Integrates the results from Steps 4, 4c, and 5a to add correct answers and image information (ID and path) to the questions.
+*   [ ] **(要修正/Needs Modification) Step 5b: Integration (正解・画像情報統合)**: Step 4, 4b, 4c, **4d**, 5a の結果を統合する。一問一答問題と連続問題の両方に対応し、問題に正解と画像情報を付与する。**連続問題に含まれる問題が一問一答として重複して抽出された場合、これを自動で検知・除外する機能を実装済み。**/ Integrates the results from Steps 4, 4b, 4c, **4d**, and 5a. Will handle both single and consecutive questions, adding correct answers and image information (ID and path). **Includes functionality to detect and exclude single-answer questions that are duplicates of those already in a consecutive block.**
 *   [x] **Step 5.5: Summary Output (集計情報出力)**: 各PDFファイルごとの問題数、総画像数、問題タイプの内訳などの統計情報を中間ファイルとして出力する。/ Outputs statistical information such as the number of questions, total images, and a breakdown of question types for each PDF file as an intermediate file.
-*   [x] **Step 6: Finalization (最終生成)**: 全てのデータを統合し、最終的なJSONと画像ファイルを出力する。JSON内の画像パスを更新し、中間ディレクトリの画像を最終出力ディレクトリに整理・リネームする。/ Consolidates all data to output the final JSON and image files. Updates image paths within the JSON and organizes/renames images from the intermediate directory to the final output directory.
+*   [x] **(修正済み/Modified) Step 6: Finalization (最終生成)**: 全てのデータを統合し、最終的なJSONと画像ファイルを出力する。**一問一答と連続問題を区別できる新しいデータ形式**に対応済み。/ Consolidates all data to output the final JSON and image files. **Already supports the new data format** that distinguishes between single and consecutive questions.
 *   [x] **Step 7: Problem Solving (LLMによる問題解答)**: (任意実行 / Optional) Step 6で生成されたJSONと画像をLLMに提示し、問題を解かせる。解答、根拠、自信度、関連領域をJSONL形式で出力する。/ Presents the JSON and images generated in Step 6 to an LLM to have it solve the problems. Outputs the answer, reasoning, confidence level, and related domains in JSONL format.
 
 ## **実行手順 / Execution Procedure**
@@ -188,7 +193,7 @@ Execute the analysis process with the `docker-compose run --rm parser python src
 
 | 引数 / Argument | 説明 / Description | デフォルト値 / Default |
 | :--- | :--- | :--- |
-| `--steps [数値...]` | 実行するステップ番号をスペース区切りで指定します。`5a`, `5b`, `5.5` のように指定可能です。/ Specify the step numbers to execute, separated by spaces. You can specify `5a`, `5b`, `5.5`, etc. | 全ステップ（Step 7除く）/ All steps (except Step 7) |
+| `--steps [数値...]` | 実行するステップ番号をスペース区切りで指定します。`3b`, `5a` のように指定可能です。/ Specify the step numbers to execute, separated by spaces. You can specify `3b`, `5a`, etc. | 全ステップ（Step 7除く）/ All steps (except Step 7) |
 | `--files [ファイル名...]` | 処理対象のPDFファイルをスペース区切りで指定します。/ Specify the target PDF files, separated by spaces. | `input`内の全PDF / All PDFs in `input` |
 | `--model-name [モデル名]` | Step 3, 4, 5a, 7で使用するLLMモデル名を指定します。/ Specify the LLM model name to use in Steps 3, 4, 5a, and 7. | `gemini-1.5-flash` |
 | `--rate-limit-wait [秒数]`| LLM API呼び出し間の待機時間（秒）を指定します。/ Specify the wait time (in seconds) between LLM API calls. | `10.0` |
@@ -212,16 +217,9 @@ docker-compose run --rm parser python src/main.py
 **特定のファイルやステップを指定する実行例 / Examples for Specific Files or Steps:**
 
 ```bash
-# 特定のファイル群に対して、全ステップを実行する
-# Run all steps for a specific group of files
-docker-compose run --rm parser python src/main.py \
-    --files tp240424-01a_01.pdf tp240424-01a_02.pdf tp240424-01seitou.pdf
-
-# Step1, 4c, 5b のみ実行し、画像マッピングと統合の動作を確認する
-# Execute only Steps 1, 4c, and 5b to check the image mapping and integration behavior
-docker-compose run --rm parser python src/main.py \
-    --steps 1 4c 5b \
-    --files tp240424-01a_01.pdf tp240424-01a_02.pdf tp240424-01seitou.pdf
+# 連続問題を含むPDFに対して、Step3bを実行して連続問題ブロックを抽出する
+# Execute Step 3b for a PDF containing consecutive questions to extract the blocks
+docker-compose run --rm parser python src/main.py --steps 1 2 3b --files tp220502-01c_01.pdf
 
 # Step 7 のみ実行し、生成済みのJSONを使ってLLMに問題を解かせる
 # Execute only Step 7 to have the LLM solve problems using the generated JSON
@@ -236,27 +234,62 @@ When processing is complete, intermediate artifacts for each step are generated 
 
 #### **JSONデータ (`output/json/{exam_id}.json`) / JSON Data**
 
-**画像を含む選択式問題の例 / Example of a multiple-choice question with an image:**
-
+**一問一答形式の問題 (`problem_format: "single"`)**
 ```json
 {
   "id": "tp240424-01a_01-15",
-  "join_key": "A-15",
-  "question_type": "multiple_choice",
-  "text": "（問題文 / Question Text）",
-  "images": [
-    {
-      "id": "A",
-      "path": "tp240424-01-A-15-A.webp"
+  "problem_format": "single",
+  "problem": {
+    "id": "tp240424-01a_01-15",
+    "problem_number": 15,
+    "question_type": "multiple_choice",
+    "text": "（問題文 / Question Text）",
+    "images": [
+      {
+        "id": "A",
+        "path": "images/tp240424-01-A-15-A.webp"
+      }
+    ],
+    "choices": [
+      { "id": "a", "text": "選択肢1 / Choice 1" }
+    ],
+    "join_key": "A-15",
+    "answer": {
+      "choices": ["a"]
     }
-  ],
-  "choices": [
-    { "id": "a", "text": "選択肢1 / Choice 1" },
-    { "id": "b", "text": "選択肢2 / Choice 2" }
-  ],
-  "answer": {
-    "choices": ["a"]
   }
+}
+```
+
+**連続問題形式の問題 (`problem_format: "consecutive"`) (計画中)**
+```json
+{
+  "id": "tp220502-01c_01-60-62",
+  "problem_format": "consecutive",
+  "join_key": "C-60-62",
+  "case_presentation": {
+    "text": "76 歳の男性。食欲不振と倦怠感を主訴に来院した...",
+    "images": [
+      { "id": "A", "path": "images/tp220502-01-C-60-62-A.webp" }
+    ]
+  },
+  "sub_questions": [
+    {
+      "id": "tp220502-01c_01-60",
+      "problem_number": 60,
+      "question_type": "multiple_choice",
+      "text": "この患者の電解質異常の鑑別に有用な検査はどれか。2 つ選べ。",
+      "images": [],
+      "choices": [...],
+      "join_key": "C-60",
+      "answer": { ... }
+    },
+    {
+      "id": "tp220502-01c_01-61",
+      "problem_number": 61,
+      "...": "..."
+    }
+  ]
 }
 ```
 
@@ -287,6 +320,7 @@ If Step 7 is executed, the LLM's answer for each question is output in JSONL for
 
 ## **今後の課題・展望 / Future Tasks and Prospects**
 
+*   **連続問題対応の完了 / Complete Consecutive Question Support:** `Step 4b`, `Step 5b`を実装・修正し、連続問題の完全なパースと統合を実現する。/ Implement and modify `Step 4b` and `Step 5b` to achieve complete parsing and integration of consecutive questions.
 *   **対応年度の拡大 / Expand Coverage of Years:** 過去の年度の試験問題PDFにも対応できるよう、パーサーの堅牢性を向上させる。/ Improve the parser's robustness to support exam question PDFs from previous years.
 *   **Web UIの開発 / Develop a Web UI:** PDFをアップロードし、ブラウザ上で結果を確認・編集できるインターフェースを構築する。/ Build an interface that allows users to upload PDFs and check/edit the results in a browser.
 *   **精度評価 / Accuracy Evaluation:** LLMによる解析結果の精度を定量的に評価する仕組みを導入する。/ Introduce a mechanism to quantitatively evaluate the accuracy of the LLM's analysis results.

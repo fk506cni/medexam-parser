@@ -11,8 +11,11 @@ sys.path.append(str(Path(__file__).parent))
 from steps.step1_extract import extract_raw_data
 from steps.step2_reorder import reorder_text
 from steps.step3_chunk import chunk_text_by_problem
+from steps.step3b_chunk_consecutive import chunk_consecutive_questions
 from steps.step4_structure import structure_problems
+from steps.step4b_structure_consecutive import structure_consecutive_problems
 from steps.step4c_map_images import map_images_to_questions
+from steps.step4d_map_consecutive_images import map_consecutive_images
 from steps.step5a_parse_answer_key import parse_answer_key
 from steps.step5b_integrate_answers import integrate_answers
 from steps.step5_5_create_summary import create_summary
@@ -92,6 +95,22 @@ def run_step3(step2_output_path: Path, rate_limit_wait: float, model_name: str, 
         print(f"  [Step 3] Failed for {step2_output_path.parent.name}.")
     return result_path
 
+def run_step3b(step2_output_path: Path):
+    """Step 3b: 連続問題をチャンク化する / Chunk consecutive problems."""
+    if not step2_output_path or not step2_output_path.exists():
+        print(f"  [Step 3b] Skipped: Input file not found: {step2_output_path}")
+        return None
+    pdf_stem = step2_output_path.parent.name
+    output_path = INTERMEDIATE_DIR / pdf_stem / "step3b_consecutive_chunks.json"
+    print(f"  [Step 3b] Running Consecutive Problem Chunking for {pdf_stem}...")
+    chunk_consecutive_questions(step2_output_path, output_path, pdf_stem)
+    if output_path.exists():
+        print(f"  [Step 3b] Completed. Output: {output_path}")
+        return output_path
+    else:
+        print(f"  [Step 3b] Failed for {pdf_stem}.")
+        return None
+
 def run_step4(step3_output_path: Path, model_name: str, rate_limit_wait: float, batch_size: int, max_batches: int, max_retries: int):
     """Step 4: 問題を構造化する / Structure problems."""
     if not step3_output_path or not step3_output_path.exists():
@@ -111,6 +130,26 @@ def run_step4(step3_output_path: Path, model_name: str, rate_limit_wait: float, 
         print(f"  [Step 4] Completed. Output: {result_path}")
     else:
         print(f"  [Step 4] Failed for {step3_output_path.parent.name}.")
+    return result_path
+
+def run_step4b(step3b_output_path: Path, model_name: str, rate_limit_wait: float, max_retries: int, debug: bool):
+    """Step 4b: 連続問題を構造化する / Structure consecutive problems."""
+    if not step3b_output_path or not step3b_output_path.exists():
+        print(f"  [Step 4b] Skipped: Input file not found: {step3b_output_path}")
+        return None
+    print(f"  [Step 4b] Running Consecutive Structure Parsing for {step3b_output_path.parent.name}...")
+    result_path = structure_consecutive_problems(
+        step3b_output_path=step3b_output_path,
+        intermediate_dir=INTERMEDIATE_DIR,
+        model_name=model_name,
+        rate_limit_wait=rate_limit_wait,
+        max_retries=max_retries,
+        debug=debug
+    )
+    if result_path:
+        print(f"  [Step 4b] Completed. Output: {result_path}")
+    else:
+        print(f"  [Step 4b] Failed for {step3b_output_path.parent.name}.")
     return result_path
 
 def run_step4c(step1_output_path: Path, structured_problem_path: Path):
@@ -134,54 +173,42 @@ def run_step4c(step1_output_path: Path, structured_problem_path: Path):
         print(f"  [Step 4c] Failed for {step1_output_path.parent.name}.")
     return result_path
 
-def run_step5b(exam_id: str, structured_problem_paths: list[Path], parsed_answer_key_path: Path, image_mapping_paths: list[Path]):
+def run_step4d(step1_output_path: Path, step3b_output_path: Path):
+    """Step 4d: 連続問題の画像をマッピングする / Map images for consecutive questions."""
+    if not step1_output_path or not step1_output_path.exists():
+        print(f"  [Step 4d] Skipped: Input file not found: {step1_output_path}")
+        return None
+    if not step3b_output_path or not step3b_output_path.exists():
+        print(f"  [Step 4d] Skipped: Corresponding consecutive chunk file not found: {step3b_output_path}")
+        return None
+
+    pdf_stem = step1_output_path.parent.name
+    output_path = INTERMEDIATE_DIR / pdf_stem / "step4d_consecutive_image_mapping.json"
+    print(f"  [Step 4d] Running Consecutive Image-Question Mapping for {pdf_stem}...")
+    map_consecutive_images(step1_output_path, step3b_output_path, output_path)
+    if output_path.exists():
+        print(f"  [Step 4d] Completed. Output: {output_path}")
+        return output_path
+    else:
+        print(f"  [Step 4d] Failed for {pdf_stem}.")
+        return None
+
+def run_step5b(exam_id: str, single_problem_paths: list[Path], consecutive_problem_paths: list[Path], parsed_answer_key_path: Path, image_mapping_paths: list[Path]):
     """Step 5b: 複数の問題JSONを統合し、正解と画像情報を結合する / Combine multiple problem JSONs, and integrate answers and image information."""
-    if not structured_problem_paths:
+    if not single_problem_paths and not consecutive_problem_paths:
         print(f"  [Step 5b] Skipped for {exam_id}: No structured problem files found.")
         return None
-    if not parsed_answer_key_path or not parsed_answer_key_path.exists():
-        print(f"  [Step 5b] Skipped for {exam_id}: Parsed answer key file not found: {parsed_answer_key_path}")
-        # 解答キーがなくても、問題ファイルの統合は行う
-        # Even without an answer key, proceed with combining problem files.
-        pass
 
-    # 複数の問題JSONファイルを1つに統合する
-    # Combine multiple problem JSON files into one.
-    all_problems = []
-    for problem_path in structured_problem_paths:
-        try:
-            with open(problem_path, 'r', encoding='utf-8') as f:
-                problems = json.load(f)
-                if isinstance(problems, list):
-                    all_problems.extend(problems)
-                else:
-                    print(f"  [Step 5b] Warning: Expected a list in {problem_path.name}, but got {type(problems)}. Skipping.")
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            print(f"  [Step 5b] Warning: Could not read or parse {problem_path.name}: {e}")
-            continue
-    
-    if not all_problems:
-        print(f"  [Step 5b] Skipped for {exam_id}: No valid problems to process after combining files.")
-        return None
-
-    # 統合した問題リストを一時ファイルに保存
-    # Save the combined problem list to a temporary file.
-    combined_dir = INTERMEDIATE_DIR / exam_id
-    combined_dir.mkdir(exist_ok=True)
-    combined_path = combined_dir / "step4_structured_problems_combined.json"
-    with open(combined_path, 'w', encoding='utf-8') as f:
-        json.dump(all_problems, f, ensure_ascii=False, indent=2)
-    print(f"  [Step 5b] Combined {len(all_problems)} problems for exam {exam_id} into {combined_path.name}")
-
-    # 正解情報と画像情報を統合
-    # Integrate answer and image information.
     print(f"  [Step 5b] Running Integration for exam {exam_id}...")
     result_path = integrate_answers(
-        structured_problems_path=combined_path,
+        exam_id=exam_id,
+        single_problem_paths=single_problem_paths,
+        consecutive_problem_paths=consecutive_problem_paths,
         parsed_answer_key_path=parsed_answer_key_path,
-        image_mapping_paths=image_mapping_paths, # 画像マッピングファイルのパスリストを渡す / Pass the list of image mapping file paths.
+        image_mapping_paths=image_mapping_paths,
         intermediate_dir=INTERMEDIATE_DIR
     )
+
     if result_path:
         print(f"  [Step 5b] Completed. Output: {result_path}")
     else:
@@ -249,7 +276,7 @@ def main():
         "--steps",
         nargs='+',
         type=str, # 5a, 5b, 5.5, 6を扱えるようにstr型に変更 / Change to str to handle 5a, 5b, 5.5, 6
-        default=['1', '2', '3', '4', '4c', '5a', '5b', '5.5', '6'], # デフォルトは全ステップ / Default is all steps
+        default=['1', '2', '3', '3b', '4', '4b', '4c', '5a', '5b', '5.5', '6'], # デフォルトは全ステップ / Default is all steps
         help="実行するステップ番号をスペース区切りで指定します (例: 1 2 5a 5b 5.5 6)。/ Specify step numbers to run, separated by spaces (e.g., 1 2 5a 5b 5.5 6)."
     )
     parser.add_argument(
@@ -267,7 +294,7 @@ def main():
     parser.add_argument(
         "--model-name",
         type=str,
-        default="gemini-1.5-flash",
+        default="gemini-2.5-flash-lite",
         help="使用するLLMモデル名を指定します。/ Specify the LLM model name to use."
     )
     parser.add_argument(
@@ -294,6 +321,13 @@ def main():
         default=3,
         help="Step 4のリトライ回数を指定します。/ Specify the number of retries for Step 4."
     )
+    parser.add_argument(
+        "--retry-step4b",
+        type=int,
+        default=3,
+        help="Step 4bのリトライ回数を指定します。/ Specify the number of retries for Step 4b."
+    )
+    
     parser.add_argument(
         "--retry-step5a",
         type=int,
@@ -361,6 +395,7 @@ def main():
         if exam_id not in exam_intermediate_files:
             exam_intermediate_files[exam_id] = {
                 "step4_outputs": [], 
+                "step4b_outputs": [],
                 "answer_key_extraction_output": None, 
                 "parsed_answer_key_output": None,
                 "image_extraction_outputs": [],
@@ -384,11 +419,11 @@ def main():
         elif file_type == "image":
             # 画像PDFはStep1（画像抽出）とStep4c（画像マッピング）を実行
             # Image PDFs run Step 1 (image extraction) and Step 4c (image mapping)
-            executable_steps.update(target_steps.intersection({'1', '4c'}))
+            executable_steps.update(target_steps.intersection({'1', '4c', '4d'}))
         else: # text
             # テキストPDFはテキスト処理ステップを実行
             # Text PDFs run text processing steps
-            executable_steps.update(target_steps.intersection({'1', '2', '3', '4'}))
+            executable_steps.update(target_steps.intersection({'1', '2', '3', '3b', '4', '4b'}))
 
 
         # 各ステップの出力を管理
@@ -431,6 +466,19 @@ def main():
             if step_outputs.get('4c'):
                 exam_intermediate_files[exam_id]["image_mapping_outputs"].append(step_outputs['4c'])
 
+        if '4d' in executable_steps:
+            # step4dは、画像PDFのstep1と問題PDFのstep3bが必要
+            step1_output = step_outputs.get(1) or INTERMEDIATE_DIR / pdf_stem / "step1_raw_extraction.json"
+            problem_pdf_stem = pdf_stem.replace('_02', '_01')
+            step3b_output_path = INTERMEDIATE_DIR / problem_pdf_stem / "step3b_consecutive_chunks.json"
+            
+            step_outputs['4d'] = run_step4d(
+                step1_output,
+                step3b_output_path,
+            )
+            if step_outputs.get('4d'):
+                exam_intermediate_files[exam_id]["image_mapping_outputs"].append(step_outputs['4d'])
+
         if '2' in executable_steps:
             step1_output = step_outputs.get(1) or INTERMEDIATE_DIR / pdf_stem / "step1_raw_extraction.json"
             step_outputs[2] = run_step2(step1_output)
@@ -439,6 +487,10 @@ def main():
             step2_output = step_outputs.get(2) or INTERMEDIATE_DIR / pdf_stem / "step2_reordered_text.txt"
             step_outputs[3] = run_step3(step2_output, args.rate_limit_wait, args.model_name, args.retry_step3, args.debug)
 
+        if '3b' in executable_steps:
+            step2_output = step_outputs.get(2) or INTERMEDIATE_DIR / pdf_stem / "step2_reordered_text.txt"
+            step_outputs['3b'] = run_step3b(step2_output)
+
         if '4' in executable_steps:
             step3_output = step_outputs.get(3) or INTERMEDIATE_DIR / pdf_stem / "step3_problem_chunks.json"
             step_outputs[4] = run_step4(
@@ -446,6 +498,14 @@ def main():
             )
             if step_outputs.get(4):
                  exam_intermediate_files[exam_id]["step4_outputs"].append(step_outputs[4])
+        
+        if '4b' in executable_steps:
+            step3b_output = step_outputs.get('3b') or INTERMEDIATE_DIR / pdf_stem / "step3b_consecutive_chunks.json"
+            step_outputs['4b'] = run_step4b(
+                step3b_output, args.model_name, args.rate_limit_wait, args.retry_step4b, args.debug
+            )
+            if step_outputs.get('4b'):
+                exam_intermediate_files[exam_id]["step4b_outputs"].append(step_outputs['4b'])
         
         print("-" * 30)
 
@@ -472,36 +532,29 @@ def main():
             # --- Step 5b: 正解情報の統合 / Integrate Answer Information ---
             if '5b' in target_steps:
                 # 5aで生成されたパス、または中間ディレクトリのデフォルトパスを探す
-                # Find the path generated in 5a, or the default path in the intermediate directory
-                # 正答ファイル名は "{exam_id}seitou.pdf" と想定
-                # Assume the answer filename is "{exam_id}seitou.pdf"
                 answer_key_pdf_stem = f"{exam_id}seitou"
                 final_parsed_answer_key_path = files.get("parsed_answer_key_output") \
                     or INTERMEDIATE_DIR / answer_key_pdf_stem / "step5a_parsed_answer_key.json"
 
-                # Step4の出力パスを収集
-                # Collect Step 4 output paths
+                # Step4, 4b, 4c, 4dの出力パスを収集 (キャッシュがなければ探索)
                 step4_outputs = files.get("step4_outputs", [])
                 if not step4_outputs:
-                    # `tp240424-01`のようなIDにマッチする全問題PDFの中間ディレクトリを探す
-                    # Find intermediate directories for all question PDFs matching an ID like `tp240424-01`
-                    for pdf_path in pdf_files:
-                        if pdf_path.stem.startswith(exam_id) and 'seitou' not in pdf_path.stem and not pdf_path.name.endswith("_02.pdf"):
-                            step4_path = INTERMEDIATE_DIR / pdf_path.stem / "step4_structured_problems.json"
-                            if step4_path.exists():
-                                step4_outputs.append(step4_path)
+                    for p in INTERMEDIATE_DIR.glob(f"{exam_id}*/step4_structured_problems.json"):
+                        step4_outputs.append(p)
                 
-                # Step4cの出力パスを収集
-                # Collect Step 4c output paths
+                step4b_outputs = files.get("step4b_outputs", [])
+                if not step4b_outputs:
+                     for p in INTERMEDIATE_DIR.glob(f"{exam_id}*/step4b_structured_consecutive.json"):
+                        step4b_outputs.append(p)
+
                 image_mapping_paths = files.get("image_mapping_outputs", [])
                 if not image_mapping_paths:
-                    for pdf_path in pdf_files:
-                        if pdf_path.stem.startswith(exam_id) and pdf_path.name.endswith("_02.pdf"):
-                            mapping_path = INTERMEDIATE_DIR / pdf_path.stem / "step4c_image_mapping.json"
-                            if mapping_path.exists():
-                                image_mapping_paths.append(mapping_path)
+                    for p in INTERMEDIATE_DIR.glob(f"{exam_id}*/step4c_image_mapping.json"):
+                        image_mapping_paths.append(p)
+                    for p in INTERMEDIATE_DIR.glob(f"{exam_id}*/step4d_consecutive_image_mapping.json"):
+                        image_mapping_paths.append(p)
 
-                run_step5b(exam_id, step4_outputs, final_parsed_answer_key_path, image_mapping_paths)
+                run_step5b(exam_id, step4_outputs, step4b_outputs, final_parsed_answer_key_path, image_mapping_paths)
 
             # --- Step 5.5: 集計情報の作成 / Create Summary Information ---
             if '5.5' in target_steps:
