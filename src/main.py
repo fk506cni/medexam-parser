@@ -558,12 +558,12 @@ def main():
 
             # --- Step 5.5: 集計情報の作成 / Create Summary Information ---
             if '5.5' in target_steps:
-                integrated_json_path = INTERMEDIATE_DIR / exam_id / "step5b_integrated_answers.json"
+                integrated_json_path = INTERMEDIATE_DIR / exam_id / "step5b_integrated.json"
                 run_step5_5(integrated_json_path)
 
             # --- Step 6: 最終生成 / Final Generation ---
             if '6' in target_steps:
-                integrated_json_path = INTERMEDIATE_DIR / exam_id / "step5b_integrated_answers.json"
+                integrated_json_path = INTERMEDIATE_DIR / exam_id / "step5b_integrated.json"
                 run_step6(integrated_json_path)
 
             print("-" * 30)

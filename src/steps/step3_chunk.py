@@ -63,8 +63,10 @@ def _call_gemini_api(chunk_text: str, model_name: str, debug: bool = False) -> O
         match = re.search(r"```json\s*(\[.*\])\s*```|(\[.*\])", raw_response_text, re.DOTALL)
         
         if not match:
-            print(f"Warning: LLM did not return a valid JSON array. Raw response: {raw_response_text[:300]}...")
-            return []
+            print(f"Warning: LLM did not return a parsable JSON array. Raw response: {raw_response_text[:300]}...")
+            # パース失敗時はNoneを返してリトライさせる
+            # Return None to trigger a retry on parsing failure
+            return None
 
         # マッチした部分（キャプチャグループ1または2）からJSONテキストを取得
         # Get JSON text from the matched part (capture group 1 or 2)
@@ -72,14 +74,26 @@ def _call_gemini_api(chunk_text: str, model_name: str, debug: bool = False) -> O
 
         if not json_text:
             print(f"Warning: Regex matched but no JSON content found in response: {response.text[:200]}...")
-            return []
+            # パース失敗時はNoneを返してリトライさせる
+            # Return None to trigger a retry on parsing failure
+            return None
 
+        # JSONデコードを試行
+        # Attempt to decode JSON
         return json.loads(json_text)
 
     except json.JSONDecodeError as e:
         print(f"Error decoding JSON from LLM response: {e}")
-        print(f"Raw response text: {response.text[:500]}...")
-        return []
+        # 発生した例外が`response`にアクセスできるか確認
+        # Check if the exception has access to `response`
+        try:
+            raw_text = raw_response_text
+        except NameError:
+            raw_text = "Raw response text is not available."
+        print(f"Raw response text: {raw_text[:500]}...")
+        # パース失敗時はNoneを返してリトライさせる
+        # Return None to trigger a retry on parsing failure
+        return None
     except Exception as e:
         print(f"An unexpected error occurred in _call_gemini_api: {e}")
         # APIエラー発生時はNoneを返して呼び出し元でリトライなどを判断させる

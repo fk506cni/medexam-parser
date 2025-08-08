@@ -1,4 +1,4 @@
-
+import re
 from pathlib import Path
 import json
 from typing import List, Dict, Any, Optional
@@ -45,6 +45,24 @@ def _integrate_data_into_problem(problem: Dict[str, Any], answer_key: Dict[str, 
                     "path": img_path
                 })
         problem["images"].sort(key=lambda x: x.get('path', ''))
+
+def _get_sort_key(join_key: str):
+    """
+    Generates a sortable key from a join_key (e.g., 'A-1', 'C-60-62').
+    Sorts by the character part first, then by the first number.
+    Example: 'A-1' -> ('A', 1), 'C-60-62' -> ('C', 60)
+    """
+    if not isinstance(join_key, str):
+        return ('', float('inf')) # Return a default for non-string inputs
+
+    match = re.match(r"([A-Za-z]+)-(\d+)", join_key)
+    if match:
+        char_part = match.group(1)
+        num_part = int(match.group(2))
+        return (char_part, num_part)
+    
+    # Fallback for keys that don't match (e.g., just a letter)
+    return (join_key, float('inf'))
 
 def integrate_answers(
     exam_id: str,
@@ -93,8 +111,6 @@ def integrate_answers(
                                 "problem_format": "single",
                                 "problem": problem
                             })
-                        # else: # Optional: for debugging
-                        #     print(f"  [Step 5b] Skipping single problem {problem_num} as it is part of a consecutive block.")
         except (FileNotFoundError, json.JSONDecodeError) as e:
             print(f"  [Step 5b] Warning: Could not read or parse single problem file {path.name}: {e}")
 
@@ -142,18 +158,17 @@ def integrate_answers(
                 _integrate_data_into_problem(sub_q, answer_key, image_mappings)
                 if sub_q.get("join_key"): used_join_keys.add(sub_q.get("join_key"))
 
-    # --- Sort problems by the first problem number ---
-    print(f"  [Step 5b] Sorting {len(all_problems)} problems by problem number.")
-    def get_sort_key(problem_obj):
+    # --- Sort problems by join_key ---
+    print(f"  [Step 5b] Sorting {len(all_problems)} problems by join_key.")
+    def get_sort_key_for_problem(problem_obj):
         if problem_obj.get("problem_format") == "single":
-            return problem_obj.get("problem", {}).get("problem_number", float('inf'))
+            return _get_sort_key(problem_obj.get("problem", {}).get("join_key"))
         elif problem_obj.get("problem_format") == "consecutive":
-            sub_qs = problem_obj.get("sub_questions", [])
-            if sub_qs:
-                return sub_qs[0].get("problem_number", float('inf'))
-        return float('inf') # Fallback for unexpected formats
+            # Use the main join_key of the consecutive block for sorting
+            return _get_sort_key(problem_obj.get("join_key"))
+        return ('', float('inf')) # Fallback for unexpected formats
     
-    all_problems.sort(key=get_sort_key)
+    all_problems.sort(key=get_sort_key_for_problem)
 
     # --- Unmatched Answer Key Check ---
     unmatched_answers = {k: v for k, v in answer_key.items() if k not in used_join_keys}
@@ -162,7 +177,8 @@ def integrate_answers(
         unmatched_path = intermediate_dir / exam_id / "step5b_unmatched_answers.json"
         unmatched_path.parent.mkdir(exist_ok=True, parents=True)
         with open(unmatched_path, 'w', encoding='utf-8') as f:
-            json.dump(unmatched_answers, f, ensure_ascii=False, indent=2)
+            # unmatched_answers is a dict, but we only need to save the keys (join_key)
+            json.dump(list(unmatched_answers.keys()), f, ensure_ascii=False, indent=2)
 
     # --- Save Final Integrated File ---
     output_path = intermediate_dir / exam_id / "step5b_integrated.json"
