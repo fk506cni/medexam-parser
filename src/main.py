@@ -21,6 +21,7 @@ from steps.step5b_integrate_answers import integrate_answers
 from steps.step5_5_create_summary import create_summary
 from steps.step6_finalize import finalize_output
 from steps.step7_solve_problem import run as run_step7
+from steps.step8_analyze_difficulty import run as run_step8
 
 # --- パス設定 / Path Settings ---
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -351,6 +352,12 @@ def main():
         default=1,
         help="Step 7で同じ問題を複数回解く回数を指定します。/ Specify the number of times to solve the same problem in Step 7."
     )
+    parser.add_argument(
+        "--retry-step8",
+        type=int,
+        default=3,
+        help="Step 8のリトライ回数を指定します。/ Specify the number of retries for Step 8."
+    )
     
     args = parser.parse_args()
 
@@ -573,6 +580,10 @@ def main():
         run_step7(args)
         print("-" * 30)
 
+    if '8' in target_steps:
+        print("--- Running Step 8: Analyze Difficulty ---")
+        run_step8(args)
+        print("-" * 30)
 
     print("All specified tasks finished.")
 
